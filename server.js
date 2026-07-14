@@ -21,9 +21,12 @@ app.post('/create', async (req, res) => {
     if (!prompt) return res.status(400).json({ error: 'prompt is required' });
     const description = (req.body.description || '').trim();
     const hashtags = [DEFAULT_HASHTAGS, (req.body.hashtags || '').trim()].filter(Boolean).join(' ');
+    const mediaType = (req.body.mediaType || 'videos').trim();
+    let count = parseInt(req.body.count, 10);
+    if (!Number.isInteger(count) || count < 1 || count > 12) count = 1;
 
-    console.log(`[create] generating meme for: "${prompt}"`);
-    const meme = await generateVideoMeme(prompt);
+    console.log(`[create] generating meme for: "${prompt}" (mediaType=${mediaType}, count=${count})`);
+    const meme = await generateVideoMeme(prompt, { mediaType, count });
     console.log(`[create] video ready: ${meme.url}`);
 
     // Build the final caption: AI tagline, then your optional description, then hashtags.

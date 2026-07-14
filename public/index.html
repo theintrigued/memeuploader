@@ -15,6 +15,19 @@
   <h2>ClipVault</h2>
   <input id="secret" type="password" placeholder="App secret" />
   <textarea id="prompt" rows="3" placeholder="e.g. streamer rage quits after losing to a bot"></textarea>
+
+  <label for="mediaType" style="font-size:13px;color:#555;">Media type</label>
+  <select id="mediaType">
+    <option value="videos" selected>Video</option>
+    <option value="images">Image</option>
+    <option value="all">All (mixed image/video)</option>
+  </select>
+
+  <label for="count" style="font-size:13px;color:#555;">Count (1-12) — only the first result gets posted, extras still cost credits</label>
+  <input id="count" type="number" min="1" max="12" value="1" />
+
+  <textarea id="description" rows="2" placeholder="Description (optional)"></textarea>
+  <input id="hashtags" type="text" placeholder="Hashtags, space separated, optional e.g. #twitch #gaming #fail" />
   <button onclick="submitPrompt()">Generate & Post</button>
   <div id="status"></div>
 
@@ -23,12 +36,16 @@
       const status = document.getElementById('status');
       const secret = document.getElementById('secret').value;
       const prompt = document.getElementById('prompt').value;
+      const mediaType = document.getElementById('mediaType').value;
+      const count = document.getElementById('count').value;
+      const description = document.getElementById('description').value;
+      const hashtags = document.getElementById('hashtags').value;
       status.textContent = 'Generating video... this can take a few minutes.';
       try {
         const res = await fetch('/create', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ secret, prompt }),
+          body: JSON.stringify({ secret, prompt, mediaType, count, description, hashtags }),
         });
         const data = await res.json();
         status.textContent = JSON.stringify(data, null, 2);

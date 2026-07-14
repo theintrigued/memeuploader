@@ -2,10 +2,10 @@ const axios = require('axios');
 
 const BASE = 'https://backend.insidermemes.com/v1';
 
-async function generateVideoMeme(prompt) {
+async function generateVideoMeme(prompt, { mediaType = 'videos', count = 1 } = {}) {
   const res = await axios.post(
     `${BASE}/generate/`,
-    { text: prompt, mediaType: 'videos', count: 1 },
+    { text: prompt, mediaType, count },
     { headers: authHeaders() }
   );
 
