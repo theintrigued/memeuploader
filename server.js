@@ -1,7 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const path = require('path');
-const { generateVideoMeme } = require('./routes/memes');
+const { generateVideoMemes } = require('./routes/memes');
 const { postToYouTube } = require('./routes/platforms/youtube');
 const { postToInstagram } = require('./routes/platforms/instagram');
 const { postToTikTok } = require('./routes/platforms/tiktok');
@@ -26,28 +26,32 @@ app.post('/create', async (req, res) => {
     if (!Number.isInteger(count) || count < 1 || count > 12) count = 1;
 
     console.log(`[create] generating meme for: "${prompt}" (mediaType=${mediaType}, count=${count})`);
-    const meme = await generateVideoMeme(prompt, { mediaType, count });
-    console.log(`[create] video ready: ${meme.url}`);
-
-    // Build the final caption: AI tagline, then your optional description, then hashtags.
-    const baseCaption = [meme.tagline, description, hashtags].filter(Boolean).join('\n\n');
-    const withTag = (tag) => (baseCaption.includes(tag) ? baseCaption : `${baseCaption}\n\n${tag}`);
+    const memes = await generateVideoMemes(prompt, { mediaType, count });
+    console.log(`[create] ${memes.length} video(s) ready`);
 
     const platforms = (process.env.POST_TO || '').split(',').map((p) => p.trim()).filter(Boolean);
-    const results = [];
+    const output = [];
 
-    for (const platform of platforms) {
-      try {
-        if (platform === 'youtube') results.push(await postToYouTube(meme.url, withTag('#shorts'), meme.tagline));
-        if (platform === 'instagram') results.push(await postToInstagram(meme.url, withTag('#reels')));
-        if (platform === 'tiktok') results.push(await postToTikTok(meme.url, withTag('#fyp')));
-      } catch (err) {
-        console.error(`[create] ${platform} failed:`, err.response?.data || err.message);
-        results.push({ platform, error: err.response?.data || err.message });
+    for (const meme of memes) {
+      // Build the final caption: AI tagline, then your optional description, then hashtags.
+      const baseCaption = [meme.tagline, description, hashtags].filter(Boolean).join('\n\n');
+      const withTag = (tag) => (baseCaption.includes(tag) ? baseCaption : `${baseCaption}\n\n${tag}`);
+
+      const results = [];
+      for (const platform of platforms) {
+        try {
+          if (platform === 'youtube') results.push(await postToYouTube(meme.url, withTag('#shorts'), meme.tagline));
+          if (platform === 'instagram') results.push(await postToInstagram(meme.url, withTag('#reels')));
+          if (platform === 'tiktok') results.push(await postToTikTok(meme.url, withTag('#fyp')));
+        } catch (err) {
+          console.error(`[create] ${platform} failed:`, err.response?.data || err.message);
+          results.push({ platform, error: err.response?.data || err.message });
+        }
       }
+      output.push({ videoUrl: meme.url, tagline: meme.tagline, results });
     }
 
-    res.json({ prompt, videoUrl: meme.url, tagline: meme.tagline, results });
+    res.json({ prompt, videosPosted: output.length, videos: output });
   } catch (err) {
     console.error('[create] fatal:', err.response?.data || err.message);
     res.status(500).json({ error: err.response?.data || err.message });

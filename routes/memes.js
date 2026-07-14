@@ -2,28 +2,32 @@ const axios = require('axios');
 
 const BASE = 'https://backend.insidermemes.com/v1';
 
-async function generateVideoMeme(prompt, { mediaType = 'videos', count = 1 } = {}) {
+async function generateVideoMemes(prompt, { mediaType = 'videos', count = 1 } = {}) {
   const res = await axios.post(
     `${BASE}/generate/`,
     { text: prompt, mediaType, count },
     { headers: authHeaders() }
   );
 
-  const meme = res.data.memes && res.data.memes[0];
-  if (!meme) throw new Error('No meme returned from Insider Memes');
+  const memes = res.data.memes || [];
+  if (memes.length === 0) throw new Error('No memes returned from Insider Memes');
 
-  // If file is already populated, we're done (image case / instant video)
-  if (meme.file) {
-    return { url: meme.file, tagline: meme.tagline };
+  const results = [];
+  for (const meme of memes) {
+    if (meme.file) {
+      results.push({ url: meme.file, tagline: meme.tagline });
+      continue;
+    }
+    if (meme.jobInfo && meme.jobInfo.jobId) {
+      const url = await pollForVideo(meme);
+      results.push({ url, tagline: meme.tagline });
+      continue;
+    }
+    console.error('[memes] skipping meme with no file and no jobInfo:', meme.id);
   }
 
-  // Otherwise it's an async video job — poll until it's ready.
-  if (meme.jobInfo && meme.jobInfo.jobId) {
-    const url = await pollForVideo(meme);
-    return { url, tagline: meme.tagline };
-  }
-
-  throw new Error('Meme returned with no file and no jobInfo — check API response shape');
+  if (results.length === 0) throw new Error('None of the returned memes produced a usable file');
+  return results;
 }
 
 // NOTE: Insider Memes' public docs do not publish a job-status endpoint as of
@@ -59,4 +63,4 @@ function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-module.exports = { generateVideoMeme };
+module.exports = { generateVideoMemes };
