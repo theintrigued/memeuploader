@@ -1,0 +1,17 @@
+{
+  "name": "clipvault-poster",
+  "version": "1.0.0",
+  "description": "Single-prompt meme video generator + auto-poster to YouTube Shorts, Instagram Reels, TikTok",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "axios": "^1.7.2",
+    "dotenv": "^16.4.5",
+    "googleapis": "^140.0.1",
+    "form-data": "^4.0.0"
+  }
+}
