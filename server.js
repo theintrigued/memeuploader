@@ -79,13 +79,22 @@ async function runJob(job, { prompt, description, hashtags, mediaType, count }) 
     for (const platform of platforms) {
       job.step = `Posting video ${i + 1}/${memes.length} to ${platform}...`;
       try {
-        if (platform === 'youtube') await postToYouTube(meme.url, withTag('#shorts'), meme.tagline);
-        if (platform === 'instagram') await postToInstagram(meme.url, withTag('#reels'));
-        if (platform === 'tiktok') await postToTikTok(meme.url, withTag('#fyp'));
-        job.videos[i].platforms[platform] = 'done';
+        if (platform === 'youtube') {
+          await postToYouTube(meme.url, withTag('#shorts'), meme.tagline);
+          job.videos[i].platforms[platform] = 'done';
+        }
+        if (platform === 'instagram') {
+          await postToInstagram(meme.url, withTag('#reels'));
+          job.videos[i].platforms[platform] = 'done';
+        }
+        if (platform === 'tiktok') {
+          await postToTikTok(meme.url, withTag('#fyp'));
+          job.videos[i].platforms[platform] = 'done';
+        }
       } catch (err) {
-        console.error(`[create ${job.id}] ${platform} failed:`, err.response?.data || err.message);
-        job.videos[i].platforms[platform] = 'error';
+        const msg = JSON.stringify(err.response?.data || err.message);
+        console.error(`[create ${job.id}] ${platform} failed:`, msg);
+        job.videos[i].platforms[platform] = `error: ${msg}`;
       }
       job.completedSteps += 1;
     }
