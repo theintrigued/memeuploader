@@ -11,6 +11,7 @@ const { postToTikTok } = require('./routes/platforms/tiktok');
 const app = express();
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
+app.use(require('./routes/tiktok-oauth'));
 
 const DEFAULT_HASHTAGS = '#fyp #comedy #memes #viral #funny';
 
