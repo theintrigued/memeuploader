@@ -20,11 +20,17 @@
     .badge.pending { background: #f3f4f6; color: #666; }
     .badge.done { background: #dcfce7; color: #15803d; }
     .badge.error { background: #fee2e2; color: #b91c1c; }
+    .chip { border: 1px solid #ddd; border-radius: 8px; padding: 8px 10px; margin-top: 6px; font-size: 13px; cursor: pointer; }
+    .chip:active { background: #f3f4f6; }
   </style>
 </head>
 <body>
   <h2>ClipVault</h2>
   <input id="secret" type="password" placeholder="App secret" />
+
+  <button id="trendingBtn" type="button" onclick="loadTrending()" style="background:#111827;margin-bottom:4px;">🔥 Suggest trending topics</button>
+  <div id="trendingList" style="margin-bottom:12px;"></div>
+
   <textarea id="prompt" rows="3" placeholder="e.g. streamer rage quits after losing to a bot"></textarea>
 
   <label for="mediaType">Media type</label>
@@ -50,6 +56,32 @@
   <script>
     const platformNames = { youtube: 'YouTube', instagram: 'Instagram', tiktok: 'TikTok' };
     let pollTimer = null;
+
+    async function loadTrending() {
+      const btn = document.getElementById('trendingBtn');
+      const list = document.getElementById('trendingList');
+      const secret = document.getElementById('secret').value;
+      btn.disabled = true;
+      btn.textContent = 'Searching the web...';
+      list.innerHTML = '';
+      try {
+        const res = await fetch('/trending?secret=' + encodeURIComponent(secret));
+        const data = await res.json();
+        if (!res.ok) throw new Error(JSON.stringify(data.error || data));
+        list.innerHTML = data.suggestions.map((s, i) =>
+          `<div class="chip" onclick="useTagline(${i})"><strong>${s.topic}</strong><br><span style="color:#555;">${s.tagline}</span></div>`
+        ).join('');
+        window._trending = data.suggestions;
+      } catch (e) {
+        list.innerHTML = '<div style="color:#b91c1c;font-size:13px;">Failed to load: ' + e.message + '</div>';
+      }
+      btn.disabled = false;
+      btn.textContent = '🔥 Suggest trending topics';
+    }
+
+    function useTagline(i) {
+      document.getElementById('prompt').value = window._trending[i].tagline;
+    }
 
     async function submitPrompt() {
       const btn = document.getElementById('submitBtn');

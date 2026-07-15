@@ -3,6 +3,7 @@ const express = require('express');
 const path = require('path');
 const crypto = require('crypto');
 const { generateVideoMemes } = require('./routes/memes');
+const { getTrendingSuggestions } = require('./routes/trending');
 const { postToYouTube } = require('./routes/platforms/youtube');
 const { postToInstagram } = require('./routes/platforms/instagram');
 const { postToTikTok } = require('./routes/platforms/tiktok');
@@ -97,6 +98,19 @@ app.get('/status/:jobId', (req, res) => {
   const job = jobs[req.params.jobId];
   if (!job) return res.status(404).json({ error: 'Unknown job — server may have restarted' });
   res.json(job);
+});
+
+app.get('/trending', async (req, res) => {
+  if (req.query.secret !== process.env.APP_SECRET) {
+    return res.status(401).json({ error: 'Bad secret' });
+  }
+  try {
+    const suggestions = await getTrendingSuggestions();
+    res.json({ suggestions });
+  } catch (err) {
+    console.error('[trending] failed:', err.response?.data || err.message);
+    res.status(500).json({ error: err.response?.data || err.message });
+  }
 });
 
 app.get('/health', (req, res) => res.json({ ok: true }));
