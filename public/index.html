@@ -6,9 +6,20 @@
   <title>ClipVault Poster</title>
   <style>
     body { font-family: -apple-system, sans-serif; max-width: 480px; margin: 40px auto; padding: 0 16px; }
-    input, textarea { width: 100%; font-size: 16px; padding: 10px; margin: 8px 0; box-sizing: border-box; }
+    input, textarea, select { width: 100%; font-size: 16px; padding: 10px; margin: 8px 0; box-sizing: border-box; }
     button { width: 100%; padding: 14px; font-size: 16px; background: #7c3aed; color: white; border: none; border-radius: 8px; }
-    #status { margin-top: 16px; white-space: pre-wrap; font-size: 14px; }
+    button:disabled { background: #c4b5fd; }
+    label { font-size: 13px; color: #555; }
+    #progressWrap { margin-top: 20px; display: none; }
+    #progressBarOuter { width: 100%; background: #eee; border-radius: 8px; height: 14px; overflow: hidden; }
+    #progressBarInner { height: 100%; width: 0%; background: #7c3aed; transition: width 0.3s; }
+    #stepText { font-size: 14px; margin-top: 6px; color: #333; }
+    .video-block { margin-top: 14px; padding: 10px; border: 1px solid #eee; border-radius: 8px; font-size: 13px; }
+    .platform-row { display: flex; justify-content: space-between; margin-top: 4px; }
+    .badge { padding: 2px 8px; border-radius: 6px; font-size: 12px; }
+    .badge.pending { background: #f3f4f6; color: #666; }
+    .badge.done { background: #dcfce7; color: #15803d; }
+    .badge.error { background: #fee2e2; color: #b91c1c; }
   </style>
 </head>
 <body>
@@ -16,31 +27,47 @@
   <input id="secret" type="password" placeholder="App secret" />
   <textarea id="prompt" rows="3" placeholder="e.g. streamer rage quits after losing to a bot"></textarea>
 
-  <label for="mediaType" style="font-size:13px;color:#555;">Media type</label>
+  <label for="mediaType">Media type</label>
   <select id="mediaType">
     <option value="videos" selected>Video</option>
     <option value="images">Image</option>
     <option value="all">All (mixed image/video)</option>
   </select>
 
-  <label for="count" style="font-size:13px;color:#555;">Count (1-12) — only the first result gets posted, extras still cost credits</label>
+  <label for="count">Count (1-12) — every result gets posted to every platform</label>
   <input id="count" type="number" min="1" max="12" value="1" />
 
   <textarea id="description" rows="2" placeholder="Description (optional)"></textarea>
   <input id="hashtags" type="text" placeholder="Hashtags, space separated, optional e.g. #twitch #gaming #fail" />
-  <button onclick="submitPrompt()">Generate & Post</button>
-  <div id="status"></div>
+  <button id="submitBtn" onclick="submitPrompt()">Generate & Post</button>
+
+  <div id="progressWrap">
+    <div id="progressBarOuter"><div id="progressBarInner"></div></div>
+    <div id="stepText">Starting...</div>
+    <div id="videoList"></div>
+  </div>
 
   <script>
+    const platformNames = { youtube: 'YouTube', instagram: 'Instagram', tiktok: 'TikTok' };
+    let pollTimer = null;
+
     async function submitPrompt() {
-      const status = document.getElementById('status');
+      const btn = document.getElementById('submitBtn');
+      const progressWrap = document.getElementById('progressWrap');
       const secret = document.getElementById('secret').value;
       const prompt = document.getElementById('prompt').value;
       const mediaType = document.getElementById('mediaType').value;
       const count = document.getElementById('count').value;
       const description = document.getElementById('description').value;
       const hashtags = document.getElementById('hashtags').value;
-      status.textContent = 'Generating video... this can take a few minutes.';
+
+      btn.disabled = true;
+      btn.textContent = 'Working...';
+      progressWrap.style.display = 'block';
+      document.getElementById('stepText').textContent = 'Sending request...';
+      document.getElementById('progressBarInner').style.width = '0%';
+      document.getElementById('videoList').innerHTML = '';
+
       try {
         const res = await fetch('/create', {
           method: 'POST',
@@ -48,10 +75,52 @@
           body: JSON.stringify({ secret, prompt, mediaType, count, description, hashtags }),
         });
         const data = await res.json();
-        status.textContent = JSON.stringify(data, null, 2);
+        if (!res.ok) {
+          document.getElementById('stepText').textContent = 'Error: ' + JSON.stringify(data.error || data);
+          btn.disabled = false;
+          btn.textContent = 'Generate & Post';
+          return;
+        }
+        pollJob(data.jobId);
       } catch (e) {
-        status.textContent = 'Error: ' + e.message;
+        document.getElementById('stepText').textContent = 'Error: ' + e.message;
+        btn.disabled = false;
+        btn.textContent = 'Generate & Post';
       }
+    }
+
+    function pollJob(jobId) {
+      if (pollTimer) clearInterval(pollTimer);
+      pollTimer = setInterval(async () => {
+        try {
+          const res = await fetch('/status/' + jobId);
+          const job = await res.json();
+          renderJob(job);
+          if (job.status === 'done' || job.status === 'error') {
+            clearInterval(pollTimer);
+            const btn = document.getElementById('submitBtn');
+            btn.disabled = false;
+            btn.textContent = 'Generate & Post';
+          }
+        } catch (e) {
+          // transient network hiccup, keep polling
+        }
+      }, 3000);
+    }
+
+    function renderJob(job) {
+      const pct = job.totalSteps ? Math.round((job.completedSteps / job.totalSteps) * 100) : 0;
+      document.getElementById('progressBarInner').style.width = pct + '%';
+      document.getElementById('stepText').textContent =
+        job.status === 'error' ? 'Error: ' + JSON.stringify(job.error) : job.step + ' (' + pct + '%)';
+
+      const list = document.getElementById('videoList');
+      list.innerHTML = job.videos.map((v, i) => {
+        const rows = Object.entries(v.platforms).map(([platform, status]) =>
+          `<div class="platform-row"><span>${platformNames[platform] || platform}</span><span class="badge ${status}">${status}</span></div>`
+        ).join('');
+        return `<div class="video-block"><strong>Video ${i + 1}</strong>${rows}</div>`;
+      }).join('');
     }
   </script>
 </body>
