@@ -15,7 +15,7 @@ async function getTrendingSuggestions() {
     'https://api.anthropic.com/v1/messages',
     {
       model: 'claude-sonnet-5',
-      max_tokens: 1500,
+      max_tokens: 4096,
       system: SYSTEM_PROMPT,
       messages: [{ role: 'user', content: 'Give me 8 trending video ideas for right now.' }],
       tools: [{ type: 'web_search_20250305', name: 'web_search' }],
@@ -35,10 +35,19 @@ async function getTrendingSuggestions() {
   try {
     return JSON.parse(cleaned);
   } catch (e) {
-    // Claude sometimes wraps JSON with a sentence despite instructions — try to salvage it.
-    const match = cleaned.match(/\[[\s\S]*\]/);
-    if (match) return JSON.parse(match[0]);
-    throw new Error('Could not parse trending suggestions: ' + cleaned.slice(0, 200));
+    // Full array didn't parse (often because the response got cut off mid-object).
+    // Salvage every individual {...} entry that IS complete and valid, drop the rest.
+    const objectMatches = cleaned.match(/\{\s*"topic"[\s\S]*?\}/g) || [];
+    const salvaged = [];
+    for (const chunk of objectMatches) {
+      try {
+        salvaged.push(JSON.parse(chunk));
+      } catch (_) {
+        // this one was cut off mid-object — skip it
+      }
+    }
+    if (salvaged.length > 0) return salvaged;
+    throw new Error('Could not parse any trending suggestions: ' + cleaned.slice(0, 200));
   }
 }
 
