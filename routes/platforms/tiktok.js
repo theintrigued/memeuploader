@@ -35,21 +35,42 @@ async function getFreshAccessToken() {
 // "inbox" (draft) uploads — the video lands in your TikTok inbox and you
 // still have to tap Post inside the TikTok app. Direct auto-publish
 // requires TikTok's Content Posting API audit approval.
+//
+// We use FILE_UPLOAD (not PULL_FROM_URL) because pull-from-url requires
+// verifying ownership of the source domain, which we don't control since
+// videos are hosted on Insider Memes' domain.
 async function postToTikTok(videoUrl, caption) {
   const token = await getFreshAccessToken();
+
+  const videoRes = await axios.get(videoUrl, { responseType: 'arraybuffer' });
+  const videoBuffer = Buffer.from(videoRes.data);
+  const videoSize = videoBuffer.length;
 
   const initRes = await axios.post(
     'https://open.tiktokapis.com/v2/post/publish/inbox/video/init/',
     {
       source_info: {
-        source: 'PULL_FROM_URL',
-        video_url: videoUrl,
+        source: 'FILE_UPLOAD',
+        video_size: videoSize,
+        chunk_size: videoSize,
+        total_chunk_count: 1,
       },
     },
     { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } }
   );
 
-  return { platform: 'tiktok', publishId: initRes.data.data.publish_id, note: 'Sent to TikTok inbox — open the TikTok app to finish posting until your app is audited for direct publish.' };
+  const { publish_id, upload_url } = initRes.data.data;
+
+  await axios.put(upload_url, videoBuffer, {
+    headers: {
+      'Content-Type': 'video/mp4',
+      'Content-Range': `bytes 0-${videoSize - 1}/${videoSize}`,
+    },
+    maxBodyLength: Infinity,
+    maxContentLength: Infinity,
+  });
+
+  return { platform: 'tiktok', publishId: publish_id, note: 'Sent to TikTok inbox — open the TikTok app to finish posting until your app is audited for direct publish.' };
 }
 
 module.exports = { postToTikTok };
