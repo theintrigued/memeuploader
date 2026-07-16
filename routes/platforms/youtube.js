@@ -1,36 +1,55 @@
 const { google } = require('googleapis');
 const axios = require('axios');
-const stream = require('stream');
+const log = require('../logger');
 
-async function postToYouTube(videoUrl, caption) {
+async function postToYouTube(videoUrl, caption, title) {
+  if (!process.env.YOUTUBE_CLIENT_ID || !process.env.YOUTUBE_CLIENT_SECRET || !process.env.YOUTUBE_REFRESH_TOKEN) {
+    throw new Error('YouTube env vars are not fully set (YOUTUBE_CLIENT_ID / SECRET / REFRESH_TOKEN)');
+  }
+
   const oauth2Client = new google.auth.OAuth2(
     process.env.YOUTUBE_CLIENT_ID,
     process.env.YOUTUBE_CLIENT_SECRET
   );
-  oauth2Client.setCredentials({ refresh_token: process.env.YOUTUBE_REFRESH_TOKEN });
+  oauth2Client.setCredentials({ refresh_token: process.env.YOUTUBE_REFRESH_TOKEN.trim() });
 
   const youtube = google.youtube({ version: 'v3', auth: oauth2Client });
 
-  // Stream the video file straight from Insider Memes into the YouTube upload
-  const videoRes = await axios.get(videoUrl, { responseType: 'stream' });
+  let videoRes;
+  try {
+    videoRes = await axios.get(videoUrl, { responseType: 'stream', timeout: 60000 });
+  } catch (err) {
+    throw new Error(`Could not download source video for YouTube upload: ${err.message}`);
+  }
 
-  const res = await youtube.videos.insert({
-    part: ['snippet', 'status'],
-    requestBody: {
-      snippet: {
-        title: caption.slice(0, 90) || 'ClipVault',
-        description: `${caption}\n\n#shorts`,
-        categoryId: '23', // Comedy
+  try {
+    const res = await youtube.videos.insert({
+      part: ['snippet', 'status'],
+      requestBody: {
+        snippet: {
+          title: (title || caption).slice(0, 90) || 'ClipVault',
+          description: caption.slice(0, 4900), // YouTube description cap is 5000 chars
+          categoryId: '23', // Comedy
+        },
+        status: {
+          privacyStatus: 'public',
+          selfDeclaredMadeForKids: false,
+        },
       },
-      status: {
-        privacyStatus: 'public',
-        selfDeclaredMadeForKids: false,
-      },
-    },
-    media: { body: videoRes.data },
-  });
-
-  return { platform: 'youtube', id: res.data.id, url: `https://youtube.com/shorts/${res.data.id}` };
+      media: { body: videoRes.data },
+    });
+    log.info('youtube', `Uploaded, video id=${res.data.id}`);
+    return { platform: 'youtube', id: res.data.id, url: `https://youtube.com/shorts/${res.data.id}` };
+  } catch (err) {
+    const reason = err.errors?.[0]?.reason || err.code;
+    if (reason === 'quotaExceeded') {
+      throw new Error('YouTube daily upload quota exceeded — try again tomorrow, or request a quota increase from Google Cloud Console.');
+    }
+    if (err.code === 401 || reason === 'authError') {
+      throw new Error('YouTube auth failed — refresh token may have been revoked. Regenerate it via OAuth Playground.');
+    }
+    throw err;
+  }
 }
 
 module.exports = { postToYouTube };

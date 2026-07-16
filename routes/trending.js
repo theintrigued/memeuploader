@@ -1,4 +1,5 @@
 const axios = require('axios');
+const log = require('./logger');
 
 const SYSTEM_PROMPT = `You suggest viral short-form video topics for a meme-video channel that turns
 Twitch/streamer clips into TikTok/Reels/Shorts. Style: "operatic reaction meets petty modern stakes" —
@@ -11,6 +12,10 @@ Respond ONLY with a raw JSON array, no markdown fences, no preamble. Each item:
 { "topic": "3-6 word trending topic", "tagline": "a punchy 1-sentence prompt ready to paste into a meme video generator" }`;
 
 async function getTrendingSuggestions() {
+  if (!process.env.ANTHROPIC_API_KEY) {
+    throw new Error('ANTHROPIC_API_KEY is not set — trending suggestions are unavailable');
+  }
+
   const res = await axios.post(
     'https://api.anthropic.com/v1/messages',
     {
@@ -26,6 +31,7 @@ async function getTrendingSuggestions() {
         'anthropic-version': '2023-06-01',
         'Content-Type': 'application/json',
       },
+      timeout: 60000,
     }
   );
 
@@ -35,19 +41,17 @@ async function getTrendingSuggestions() {
   try {
     return JSON.parse(cleaned);
   } catch (e) {
-    // Full array didn't parse (often because the response got cut off mid-object).
-    // Salvage every individual {...} entry that IS complete and valid, drop the rest.
+    // Full array didn't parse (often truncation mid-object) — salvage whatever complete entries exist.
     const objectMatches = cleaned.match(/\{\s*"topic"[\s\S]*?\}/g) || [];
     const salvaged = [];
     for (const chunk of objectMatches) {
-      try {
-        salvaged.push(JSON.parse(chunk));
-      } catch (_) {
-        // this one was cut off mid-object — skip it
-      }
+      try { salvaged.push(JSON.parse(chunk)); } catch (_) { /* incomplete, skip */ }
     }
-    if (salvaged.length > 0) return salvaged;
-    throw new Error('Could not parse any trending suggestions: ' + cleaned.slice(0, 200));
+    if (salvaged.length > 0) {
+      log.warn('trending', `Response was truncated/malformed — salvaged ${salvaged.length} of the intended suggestions`);
+      return salvaged;
+    }
+    throw new Error('Could not parse any trending suggestions from Claude response');
   }
 }
 

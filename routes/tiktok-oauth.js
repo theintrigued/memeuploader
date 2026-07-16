@@ -1,6 +1,7 @@
 const express = require('express');
 const axios = require('axios');
 const crypto = require('crypto');
+const log = require('./logger');
 
 const router = express.Router();
 
@@ -44,6 +45,7 @@ router.get('/tiktok/callback', async (req, res) => {
     );
 
     const { access_token, refresh_token, expires_in } = tokenRes.data;
+    log.info('tiktok-oauth', 'New TikTok token pair issued via login flow');
     res.send(`
       <body style="font-family:sans-serif;padding:20px;">
         <h3>Success — copy this into Render's TIKTOK_ACCESS_TOKEN</h3>

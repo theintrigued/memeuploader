@@ -61,3 +61,12 @@
 - Render: free tier works, ~$7/mo removes the cold-start delay
 - Insider Memes: needs a paid plan for video generation (Basic $/mo+)
 - YouTube/Instagram/TikTok APIs: free, but TikTok direct-publish requires audit approval
+
+## Diagnosing problems
+- Visit `https://your-render-url.onrender.com/health` any time — it reports which env vars are
+  missing for your configured `POST_TO` platforms, without ever exposing the actual secret values.
+- Render → your service → **Logs** tab shows a timestamped, leveled log line (`INFO`/`WARN`/`ERROR`)
+  for every step: generation start, each platform attempt, and any failure with the real error message.
+- Every job is tracked in memory for 2 hours after creation — `/status/:jobId` returns 404 past that
+  window, or immediately after a server restart (Render redeploys kill in-flight jobs; the frontend
+  will show this as an error rather than hanging silently).

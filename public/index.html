@@ -3,53 +3,163 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>ClipVault Poster</title>
+  <title>ClipVault</title>
   <style>
-    body { font-family: -apple-system, sans-serif; max-width: 480px; margin: 40px auto; padding: 0 16px; }
-    input, textarea, select { width: 100%; font-size: 16px; padding: 10px; margin: 8px 0; box-sizing: border-box; }
-    button { width: 100%; padding: 14px; font-size: 16px; background: #7c3aed; color: white; border: none; border-radius: 8px; }
-    button:disabled { background: #c4b5fd; }
-    label { font-size: 13px; color: #555; }
-    #progressWrap { margin-top: 20px; display: none; }
-    #progressBarOuter { width: 100%; background: #eee; border-radius: 8px; height: 14px; overflow: hidden; }
-    #progressBarInner { height: 100%; width: 0%; background: #7c3aed; transition: width 0.3s; }
-    #stepText { font-size: 14px; margin-top: 6px; color: #333; }
-    .video-block { margin-top: 14px; padding: 10px; border: 1px solid #eee; border-radius: 8px; font-size: 13px; }
-    .platform-row { display: flex; justify-content: space-between; margin-top: 4px; }
-    .badge { padding: 2px 8px; border-radius: 6px; font-size: 12px; }
-    .badge.pending { background: #f3f4f6; color: #666; }
-    .badge.done { background: #dcfce7; color: #15803d; }
-    .badge.error { background: #fee2e2; color: #b91c1c; }
-    .chip { border: 1px solid #ddd; border-radius: 8px; padding: 8px 10px; margin-top: 6px; font-size: 13px; cursor: pointer; }
-    .chip:active { background: #f3f4f6; }
+    :root {
+      --bg: #0b0b0f;
+      --card: #16161d;
+      --border: #26262f;
+      --text: #f2f2f5;
+      --muted: #9a9aa5;
+      --accent: #8b5cf6;
+      --accent2: #22d3ee;
+      --green: #34d399;
+      --red: #f87171;
+      --radius: 14px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: radial-gradient(circle at top, #1a1024 0%, var(--bg) 55%);
+      color: var(--text);
+      max-width: 480px;
+      margin: 0 auto;
+      padding: 28px 18px 60px;
+      min-height: 100vh;
+    }
+    h1 {
+      font-size: 22px;
+      font-weight: 800;
+      margin: 0 0 4px;
+      background: linear-gradient(90deg, var(--accent), var(--accent2));
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      display: inline-block;
+    }
+    .subtitle { color: var(--muted); font-size: 13px; margin-bottom: 22px; }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+    label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px; font-weight: 600; letter-spacing: 0.02em; text-transform: uppercase; }
+    input, textarea, select {
+      width: 100%;
+      font-size: 15px;
+      padding: 12px;
+      margin-bottom: 14px;
+      background: #0f0f14;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      color: var(--text);
+      font-family: inherit;
+    }
+    input:focus, textarea:focus, select:focus { outline: none; border-color: var(--accent); }
+    textarea { resize: vertical; }
+    .row-tight { margin-bottom: 4px; }
+    button {
+      width: 100%;
+      padding: 14px;
+      font-size: 15px;
+      font-weight: 700;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    button:active { opacity: 0.8; }
+    button:disabled { opacity: 0.5; cursor: default; }
+    .btn-primary { background: linear-gradient(90deg, var(--accent), var(--accent2)); color: #0b0b0f; }
+    .btn-secondary { background: #1f1f28; color: var(--text); border: 1px solid var(--border); margin-bottom: 4px; }
+
+    details { margin-bottom: 6px; }
+    summary { cursor: pointer; font-size: 13px; color: var(--muted); padding: 6px 0; list-style: none; }
+    summary::-webkit-details-marker { display: none; }
+    summary:before { content: '▸ '; }
+    details[open] summary:before { content: '▾ '; }
+    details .card { margin-top: 10px; }
+
+    .chip {
+      border: 1px solid var(--border);
+      background: #0f0f14;
+      border-radius: 10px;
+      padding: 10px 12px;
+      margin-top: 8px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .chip:active { border-color: var(--accent); }
+    .chip strong { color: var(--accent2); }
+    .chip .tagline { color: var(--muted); margin-top: 2px; display: block; }
+
+    #progressWrap { display: none; }
+    #progressBarOuter { width: 100%; background: #1f1f28; border-radius: 8px; height: 10px; overflow: hidden; }
+    #progressBarInner { height: 100%; width: 0%; background: linear-gradient(90deg, var(--accent), var(--accent2)); transition: width 0.35s ease; }
+    #stepText { font-size: 13px; margin-top: 8px; color: var(--muted); }
+
+    .video-block { margin-top: 12px; padding: 12px; border: 1px solid var(--border); border-radius: 10px; font-size: 13px; background: #0f0f14; }
+    .video-block strong { display: block; margin-bottom: 6px; color: var(--text); }
+    .platform-row { display: flex; justify-content: space-between; align-items: center; padding: 4px 0; }
+    .badge { padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; }
+    .badge.pending { background: #2a2a35; color: var(--muted); }
+    .badge.generating, .badge.posting { background: #2a2a35; color: var(--accent2); }
+    .badge.done { background: rgba(52, 211, 153, 0.15); color: var(--green); }
+    .badge.error { background: rgba(248, 113, 113, 0.15); color: var(--red); }
+    .error-detail { color: var(--red); font-size: 12px; margin-top: 2px; opacity: 0.85; }
+
+    .spinner {
+      display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: var(--text); border-radius: 50%; animation: spin 0.7s linear infinite; margin-right: 6px; vertical-align: -2px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
   </style>
 </head>
 <body>
-  <h2>ClipVault</h2>
-  <input id="secret" type="password" placeholder="App secret" />
+  <h1>ClipVault</h1>
+  <div class="subtitle">One prompt in. Videos out, everywhere.</div>
 
-  <button id="trendingBtn" type="button" onclick="loadTrending()" style="background:#111827;margin-bottom:4px;">🔥 Suggest trending topics</button>
-  <div id="trendingList" style="margin-bottom:12px;"></div>
+  <div class="card">
+    <label for="secret">App secret</label>
+    <input id="secret" type="password" placeholder="••••••••" style="margin-bottom:0;" />
+  </div>
 
-  <textarea id="prompt" rows="3" placeholder="e.g. streamer rage quits after losing to a bot"></textarea>
+  <button class="btn-secondary" id="trendingBtn" type="button" onclick="loadTrending()">🔥 Suggest trending topics</button>
+  <div id="trendingList"></div>
 
-  <label for="mediaType">Media type</label>
-  <select id="mediaType">
-    <option value="videos" selected>Video</option>
-    <option value="images">Image</option>
-    <option value="all">All (mixed image/video)</option>
-  </select>
+  <div class="card" style="margin-top:16px;">
+    <label for="prompt">Prompt</label>
+    <textarea id="prompt" rows="3" placeholder="e.g. streamer rage quits after losing to a bot" style="margin-bottom:0;"></textarea>
+  </div>
 
-  <label for="count">Count (1-12) — every result gets posted to every platform</label>
-  <input id="count" type="number" min="1" max="12" value="1" />
+  <details>
+    <summary>Advanced options</summary>
+    <div class="card">
+      <label for="mediaType">Media type</label>
+      <select id="mediaType">
+        <option value="videos" selected>Video</option>
+        <option value="images">Image</option>
+        <option value="all">All (mixed)</option>
+      </select>
 
-  <textarea id="description" rows="2" placeholder="Description (optional)"></textarea>
-  <input id="hashtags" type="text" placeholder="Hashtags, space separated, optional e.g. #twitch #gaming #fail" />
-  <button id="submitBtn" onclick="submitPrompt()">Generate & Post</button>
+      <label for="count">Count (1–12) — every result posts to every platform</label>
+      <input id="count" type="number" min="1" max="12" value="1" />
 
-  <div id="progressWrap">
+      <label for="description">Description (optional)</label>
+      <textarea id="description" rows="2" placeholder="Extra context to add to the caption"></textarea>
+
+      <label for="hashtags">Hashtags (optional)</label>
+      <input id="hashtags" type="text" placeholder="#twitch #gaming #fail" style="margin-bottom:0;" />
+    </div>
+  </details>
+
+  <button class="btn-primary" id="submitBtn" onclick="submitPrompt()" style="margin-top:12px;">Generate & Post</button>
+
+  <div id="progressWrap" class="card" style="margin-top:16px;">
     <div id="progressBarOuter"><div id="progressBarInner"></div></div>
-    <div id="stepText">Starting...</div>
+    <div id="stepText"><span class="spinner"></span>Starting...</div>
     <div id="videoList"></div>
   </div>
 
@@ -62,18 +172,18 @@
       const list = document.getElementById('trendingList');
       const secret = document.getElementById('secret').value;
       btn.disabled = true;
-      btn.textContent = 'Searching the web...';
+      btn.innerHTML = '<span class="spinner"></span>Searching the web...';
       list.innerHTML = '';
       try {
         const res = await fetch('/trending?secret=' + encodeURIComponent(secret));
         const data = await res.json();
-        if (!res.ok) throw new Error(JSON.stringify(data.error || data));
-        list.innerHTML = data.suggestions.map((s, i) =>
-          `<div class="chip" onclick="useTagline(${i})"><strong>${s.topic}</strong><br><span style="color:#555;">${s.tagline}</span></div>`
-        ).join('');
+        if (!res.ok) throw new Error(data.error || 'Request failed');
         window._trending = data.suggestions;
+        list.innerHTML = data.suggestions.map((s, i) =>
+          `<div class="chip" onclick="useTagline(${i})"><strong>${escapeHtml(s.topic)}</strong><span class="tagline">${escapeHtml(s.tagline)}</span></div>`
+        ).join('');
       } catch (e) {
-        list.innerHTML = '<div style="color:#b91c1c;font-size:13px;">Failed to load: ' + e.message + '</div>';
+        list.innerHTML = '<div style="color:var(--red);font-size:13px;padding:8px 0;">Failed to load: ' + escapeHtml(e.message) + '</div>';
       }
       btn.disabled = false;
       btn.textContent = '🔥 Suggest trending topics';
@@ -81,6 +191,7 @@
 
     function useTagline(i) {
       document.getElementById('prompt').value = window._trending[i].tagline;
+      document.getElementById('prompt').scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
 
     async function submitPrompt() {
@@ -93,10 +204,15 @@
       const description = document.getElementById('description').value;
       const hashtags = document.getElementById('hashtags').value;
 
+      if (!prompt.trim()) {
+        alert('Enter a prompt first.');
+        return;
+      }
+
       btn.disabled = true;
-      btn.textContent = 'Working...';
+      btn.innerHTML = '<span class="spinner"></span>Working...';
       progressWrap.style.display = 'block';
-      document.getElementById('stepText').textContent = 'Sending request...';
+      document.getElementById('stepText').innerHTML = '<span class="spinner"></span>Sending request...';
       document.getElementById('progressBarInner').style.width = '0%';
       document.getElementById('videoList').innerHTML = '';
 
@@ -108,17 +224,21 @@
         });
         const data = await res.json();
         if (!res.ok) {
-          document.getElementById('stepText').textContent = 'Error: ' + JSON.stringify(data.error || data);
-          btn.disabled = false;
-          btn.textContent = 'Generate & Post';
+          document.getElementById('stepText').textContent = 'Error: ' + (data.error || 'Request failed');
+          resetButton();
           return;
         }
         pollJob(data.jobId);
       } catch (e) {
         document.getElementById('stepText').textContent = 'Error: ' + e.message;
-        btn.disabled = false;
-        btn.textContent = 'Generate & Post';
+        resetButton();
       }
+    }
+
+    function resetButton() {
+      const btn = document.getElementById('submitBtn');
+      btn.disabled = false;
+      btn.textContent = 'Generate & Post';
     }
 
     function pollJob(jobId) {
@@ -127,15 +247,19 @@
         try {
           const res = await fetch('/status/' + jobId);
           const job = await res.json();
+          if (!res.ok) {
+            document.getElementById('stepText').textContent = 'Error: ' + (job.error || 'Lost track of this job');
+            clearInterval(pollTimer);
+            resetButton();
+            return;
+          }
           renderJob(job);
           if (job.status === 'done' || job.status === 'error') {
             clearInterval(pollTimer);
-            const btn = document.getElementById('submitBtn');
-            btn.disabled = false;
-            btn.textContent = 'Generate & Post';
+            resetButton();
           }
         } catch (e) {
-          // transient network hiccup, keep polling
+          // transient network hiccup — keep polling silently
         }
       }, 3000);
     }
@@ -143,16 +267,29 @@
     function renderJob(job) {
       const pct = job.totalSteps ? Math.round((job.completedSteps / job.totalSteps) * 100) : 0;
       document.getElementById('progressBarInner').style.width = pct + '%';
-      document.getElementById('stepText').textContent =
-        job.status === 'error' ? 'Error: ' + JSON.stringify(job.error) : job.step + ' (' + pct + '%)';
+      document.getElementById('stepText').innerHTML =
+        job.status === 'error'
+          ? 'Error: ' + escapeHtml(job.error || 'unknown error')
+          : (job.status === 'done' ? '✅ ' : '<span class="spinner"></span>') + escapeHtml(job.step) + ' (' + pct + '%)';
 
       const list = document.getElementById('videoList');
       list.innerHTML = job.videos.map((v, i) => {
-        const rows = Object.entries(v.platforms).map(([platform, status]) =>
-          `<div class="platform-row"><span>${platformNames[platform] || platform}</span><span class="badge ${status}">${status}</span></div>`
-        ).join('');
+        const rows = Object.entries(v.platforms).map(([platform, status]) => {
+          const isError = status.startsWith('error');
+          const isManual = status === 'manual';
+          const badgeClass = isError ? 'error' : status;
+          const badgeLabel = isManual ? 'manual' : (isError ? 'error' : status);
+          const errorDetail = isError ? `<div class="error-detail">${escapeHtml(status.slice(7))}</div>` : '';
+          return `<div><div class="platform-row"><span>${platformNames[platform] || platform}</span><span class="badge ${badgeClass}">${badgeLabel}</span></div>${errorDetail}</div>`;
+        }).join('');
         return `<div class="video-block"><strong>Video ${i + 1}</strong>${rows}</div>`;
       }).join('');
+    }
+
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.textContent = str ?? '';
+      return div.innerHTML;
     }
   </script>
 </body>
