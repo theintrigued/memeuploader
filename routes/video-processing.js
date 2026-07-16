@@ -87,9 +87,26 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 }
 
 async function downloadToTemp(url) {
-  const res = await axios.get(url, { responseType: 'arraybuffer', timeout: 60000, maxContentLength: MAX_DOWNLOAD_BYTES });
   const inputPath = path.join(PROCESSED_DIR, `${crypto.randomUUID()}-in.mp4`);
-  fs.writeFileSync(inputPath, Buffer.from(res.data));
+  const res = await axios.get(url, { responseType: 'stream', timeout: 60000 });
+
+  await new Promise((resolve, reject) => {
+    const writer = fs.createWriteStream(inputPath);
+    let bytesWritten = 0;
+    res.data.on('data', (chunk) => {
+      bytesWritten += chunk.length;
+      if (bytesWritten > MAX_DOWNLOAD_BYTES) {
+        writer.destroy();
+        res.data.destroy();
+        reject(new Error(`Source video exceeds ${MAX_DOWNLOAD_BYTES / 1024 / 1024}MB safety cap`));
+      }
+    });
+    res.data.pipe(writer);
+    writer.on('finish', resolve);
+    writer.on('error', reject);
+    res.data.on('error', reject);
+  });
+
   return inputPath;
 }
 
@@ -131,6 +148,7 @@ async function burnCaptions(inputPath, { hookText, captionText }) {
     '-y', '-i', inputPath,
     '-filter_complex', filterComplex,
     '-map', '[vout]', '-map', '0:a?',
+    '-threads', '1',
     '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-pix_fmt', 'yuv420p',
     '-c:a', 'aac', '-b:a', '128k',
     '-movflags', '+faststart',
