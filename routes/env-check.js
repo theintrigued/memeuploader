@@ -9,6 +9,7 @@ const CHECKS = [
   ['YOUTUBE_REFRESH_TOKEN', ['youtube']],
   ['IG_ACCESS_TOKEN', ['instagram']],
   ['IG_BUSINESS_ACCOUNT_ID', ['instagram']],
+  ['RENDER_EXTERNAL_URL', ['instagram']],
   ['TIKTOK_CLIENT_KEY', ['tiktok']],
   ['TIKTOK_CLIENT_SECRET', ['tiktok']],
   ['TIKTOK_REFRESH_TOKEN', ['tiktok']],
