@@ -1,8 +1,8 @@
 const { google } = require('googleapis');
-const fs = require('fs');
+const axios = require('axios');
 const log = require('../logger');
 
-async function postToYouTube(localVideoPath, caption, title) {
+async function postToYouTube(videoUrl, caption, title) {
   if (!process.env.YOUTUBE_CLIENT_ID || !process.env.YOUTUBE_CLIENT_SECRET || !process.env.YOUTUBE_REFRESH_TOKEN) {
     throw new Error('YouTube env vars are not fully set (YOUTUBE_CLIENT_ID / SECRET / REFRESH_TOKEN)');
   }
@@ -14,6 +14,13 @@ async function postToYouTube(localVideoPath, caption, title) {
   oauth2Client.setCredentials({ refresh_token: process.env.YOUTUBE_REFRESH_TOKEN.trim() });
 
   const youtube = google.youtube({ version: 'v3', auth: oauth2Client });
+
+  let videoRes;
+  try {
+    videoRes = await axios.get(videoUrl, { responseType: 'stream', timeout: 60000 });
+  } catch (err) {
+    throw new Error(`Could not download source video for YouTube upload: ${err.message}`);
+  }
 
   try {
     const res = await youtube.videos.insert({
@@ -29,7 +36,7 @@ async function postToYouTube(localVideoPath, caption, title) {
           selfDeclaredMadeForKids: false,
         },
       },
-      media: { body: fs.createReadStream(localVideoPath) },
+      media: { body: videoRes.data },
     });
     log.info('youtube', `Uploaded, video id=${res.data.id}`);
     return { platform: 'youtube', id: res.data.id, url: `https://youtube.com/shorts/${res.data.id}` };

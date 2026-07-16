@@ -1,5 +1,4 @@
 const axios = require('axios');
-const fs = require('fs');
 const log = require('../logger');
 
 // TikTok access tokens expire in ~24h. The refresh token lasts much longer
@@ -47,14 +46,15 @@ async function getFreshAccessToken() {
 // videos are hosted on Insider Memes' domain.
 const MAX_UPLOAD_BYTES = 100 * 1024 * 1024; // 100MB safety cap, well under TikTok's own limit
 
-async function postToTikTok(localVideoPath, caption) {
+async function postToTikTok(videoUrl, caption) {
   const token = await getFreshAccessToken();
 
   let videoBuffer;
   try {
-    videoBuffer = fs.readFileSync(localVideoPath);
+    const videoRes = await axios.get(videoUrl, { responseType: 'arraybuffer', timeout: 60000, maxContentLength: MAX_UPLOAD_BYTES });
+    videoBuffer = Buffer.from(videoRes.data);
   } catch (err) {
-    throw new Error(`Could not read processed video for TikTok upload: ${err.message}`);
+    throw new Error(`Could not download source video for TikTok upload: ${err.message}`);
   }
 
   const videoSize = videoBuffer.length;

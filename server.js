@@ -9,7 +9,6 @@ const { getTrendingSuggestions } = require('./routes/trending');
 const { postToYouTube } = require('./routes/platforms/youtube');
 const { postToInstagram } = require('./routes/platforms/instagram');
 const { postToTikTok } = require('./routes/platforms/tiktok');
-const { processVideoForPosting, cleanupProcessedFile } = require('./routes/video-processing');
 
 // Crash guards: log and keep running instead of the process dying silently
 // mid-job (which is exactly what made a previous TikTok upload look like it
@@ -21,14 +20,6 @@ const app = express();
 app.use(express.json({ limit: '1mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(require('./routes/tiktok-oauth'));
-
-app.get('/processed/:filename', (req, res) => {
-  const filename = path.basename(req.params.filename); // strips any path traversal attempt
-  const filePath = path.join(require('os').tmpdir(), 'clipvault-processed', filename);
-  res.sendFile(filePath, (err) => {
-    if (err) res.status(404).send('Not found or expired');
-  });
-});
 
 const DEFAULT_HASHTAGS = '#fyp #comedy #memes #viral #funny';
 const MAX_PROMPT_LEN = 500;
@@ -124,41 +115,18 @@ async function runJob(job, { prompt, description, hashtags, mediaType, count, pl
     const baseCaption = [meme.tagline, description, hashtags].filter(Boolean).join('\n\n');
     const withTag = (tag) => (baseCaption.includes(tag) ? baseCaption : `${baseCaption}\n\n${tag}`);
 
-    job.step = `Adding captions to video ${i + 1}/${memes.length}...`;
-    log.info('create', `[${job.id}] processing video ${i + 1} (burning captions)...`);
-
-    let processed;
-    try {
-      processed = await processVideoForPosting(meme.url, {
-        hookText: (meme.tagline || prompt).toUpperCase(),
-        captionText: baseCaption,
-      });
-    } catch (err) {
-      log.error('create', `[${job.id}] video processing failed for video ${i + 1}, all platforms for it will be marked errored: ${err.message}`);
-      for (const platform of platforms) {
-        job.videos[i].platforms[platform] = `error: video processing failed: ${err.message}`;
-        job.completedSteps += 1;
-      }
-      continue;
-    }
-
-    const publicUrl = process.env.RENDER_EXTERNAL_URL
-      ? `${process.env.RENDER_EXTERNAL_URL}/processed/${processed.filename}`
-      : null;
-
     for (const platform of platforms) {
       job.step = `Posting video ${i + 1}/${memes.length} to ${platform}...`;
       log.info('create', `[${job.id}] attempting ${platform} for video ${i + 1}...`);
       try {
         if (platform === 'youtube') {
-          await postToYouTube(processed.localPath, withTag('#shorts'), meme.tagline);
+          await postToYouTube(meme.url, withTag('#shorts'), meme.tagline);
           job.videos[i].platforms[platform] = 'done';
         } else if (platform === 'instagram') {
-          if (!publicUrl) throw new Error('RENDER_EXTERNAL_URL is not set — Instagram needs a public URL to fetch the video from');
-          await postToInstagram(publicUrl, withTag('#reels'));
+          await postToInstagram(meme.url, withTag('#reels'));
           job.videos[i].platforms[platform] = 'done';
         } else if (platform === 'tiktok') {
-          const result = await postToTikTok(processed.localPath, withTag('#fyp'));
+          const result = await postToTikTok(meme.url, withTag('#fyp'));
           job.videos[i].platforms[platform] = 'done';
           log.info('create', `[${job.id}] tiktok publish_id: ${result.publishId}`);
         } else {
@@ -170,10 +138,6 @@ async function runJob(job, { prompt, description, hashtags, mediaType, count, pl
       }
       job.completedSteps += 1;
     }
-
-    // Instagram fetches the video asynchronously after the create-container call
-    // returns, so we can't delete the file immediately — give it a generous window.
-    setTimeout(() => cleanupProcessedFile(processed.localPath), 10 * 60 * 1000).unref();
   }
 
   job.status = 'done';
