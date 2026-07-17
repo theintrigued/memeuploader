@@ -1,5 +1,6 @@
 const axios = require('axios');
 const log = require('./logger');
+const { getPerformanceSummary } = require('./analytics-feedback');
 
 let categoryCache = { list: null, fetchedAt: 0 };
 const CATEGORY_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
@@ -21,9 +22,13 @@ async function getInsiderMemesCategories() {
   }
 }
 
-function buildSystemPrompt(categories) {
+function buildSystemPrompt(categories, performanceSummary) {
   const categoryLine = categories.length > 0
     ? `Insider Memes' template library is organized into these categories: ${categories.join(', ')}. Favor topics whose emotional tone clearly fits one of these — it improves template matching.`
+    : '';
+
+  const performanceLine = performanceSummary && performanceSummary.length > 0
+    ? `\nHere's what has actually performed well on this channel recently, best first (caption — platform, engagement score):\n${performanceSummary.map((p) => `- "${p.caption.slice(0, 80)}" — ${p.platform}, score ${p.engagementScore}`).join('\n')}\nLean into similar emotional beats, pacing, or subject matter where it fits a current trend — don't just repeat the same topic, but notice what's working.`
     : '';
 
   return `You suggest viral short-form video topics for a meme-video channel that turns
@@ -42,6 +47,7 @@ Insider Memes' own examples do — a short, vivid SITUATION or EMOTION, not a pu
   Bad: "Watch him crumble like a disgraced king losing his throne to a peasant" (too written, too long)
 Keep each tagline under 12 words, concrete, keyword-rich, one clear emotional beat.
 ${categoryLine}
+${performanceLine}
 
 Respond ONLY with a raw JSON array, no markdown fences, no preamble. Each item:
 { "topic": "3-6 word trending topic", "tagline": "a short situational prompt, under 12 words, ready to paste into Insider Memes" }`;
@@ -53,13 +59,14 @@ async function getTrendingSuggestions() {
   }
 
   const categories = await getInsiderMemesCategories();
+  const performanceSummary = await getPerformanceSummary();
 
   const res = await axios.post(
     'https://api.anthropic.com/v1/messages',
     {
       model: 'claude-sonnet-5',
       max_tokens: 4096,
-      system: buildSystemPrompt(categories),
+      system: buildSystemPrompt(categories, performanceSummary),
       messages: [{ role: 'user', content: 'Give me 8 trending video ideas for right now.' }],
       tools: [{ type: 'web_search_20250305', name: 'web_search' }],
     },

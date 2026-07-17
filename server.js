@@ -6,9 +6,7 @@ const log = require('./routes/logger');
 const { checkEnv } = require('./routes/env-check');
 const { generateVideoMemes } = require('./routes/memes');
 const { getTrendingSuggestions } = require('./routes/trending');
-const { postToYouTube } = require('./routes/platforms/youtube');
-const { postToInstagram } = require('./routes/platforms/instagram');
-const { postToTikTok } = require('./routes/platforms/tiktok');
+const { postToAllPlatforms } = require('./routes/platforms/shortsync');
 
 // Crash guards: log and keep running instead of the process dying silently
 // mid-job (which is exactly what made a previous TikTok upload look like it
@@ -19,7 +17,6 @@ process.on('uncaughtException', (err) => log.error('process', 'Uncaught exceptio
 const app = express();
 app.use(express.json({ limit: '1mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
-app.use(require('./routes/tiktok-oauth'));
 
 const DEFAULT_HASHTAGS = '#fyp #comedy #memes #viral #funny';
 const MAX_PROMPT_LEN = 500;
@@ -112,31 +109,29 @@ async function runJob(job, { prompt, description, hashtags, mediaType, count, pl
 
   for (let i = 0; i < memes.length; i++) {
     const meme = memes[i];
-    const baseCaption = [meme.tagline, description, hashtags].filter(Boolean).join('\n\n');
-    const withTag = (tag) => (baseCaption.includes(tag) ? baseCaption : `${baseCaption}\n\n${tag}`);
 
-    for (const platform of platforms) {
-      job.step = `Posting video ${i + 1}/${memes.length} to ${platform}...`;
-      log.info('create', `[${job.id}] attempting ${platform} for video ${i + 1}...`);
-      try {
-        if (platform === 'youtube') {
-          await postToYouTube(meme.url, withTag('#shorts'), meme.tagline);
-          job.videos[i].platforms[platform] = 'done';
-        } else if (platform === 'instagram') {
-          await postToInstagram(meme.url, withTag('#reels'));
-          job.videos[i].platforms[platform] = 'done';
-        } else if (platform === 'tiktok') {
-          const result = await postToTikTok(meme.url, withTag('#fyp'));
-          job.videos[i].platforms[platform] = 'done';
-          log.info('create', `[${job.id}] tiktok publish_id: ${result.publishId}`);
-        } else {
-          job.videos[i].platforms[platform] = 'error: unknown platform';
-        }
-      } catch (err) {
-        log.error('create', `[${job.id}] ${platform} failed:`, err.message);
-        job.videos[i].platforms[platform] = `error: ${err.message}`;
+    job.step = `Posting video ${i + 1}/${memes.length} to ${platforms.join(', ')}...`;
+    log.info('create', `[${job.id}] posting video ${i + 1} via ShortSync to: ${platforms.join(', ')}`);
+
+    try {
+      const byPlatform = await postToAllPlatforms(
+        meme.url,
+        { hookTagline: meme.tagline, description, hashtags },
+        platforms
+      );
+      for (const platform of platforms) {
+        const result = byPlatform[platform];
+        job.videos[i].platforms[platform] = result?.status === 'done' ? 'done' : `error: ${result?.error || 'unknown error'}`;
+        job.completedSteps += 1;
       }
-      job.completedSteps += 1;
+    } catch (err) {
+      // A fatal failure here (e.g. upload itself failed) means every platform for
+      // this video failed together, since they all share one uploaded file.
+      log.error('create', `[${job.id}] ShortSync post failed for video ${i + 1}:`, err.message);
+      for (const platform of platforms) {
+        job.videos[i].platforms[platform] = `error: ${err.message}`;
+        job.completedSteps += 1;
+      }
     }
   }
 
