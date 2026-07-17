@@ -37,7 +37,7 @@ function findConnectionId(connections, platform) {
 // first_comment (not the caption body) so the visible caption stays clean.
 async function postToAllPlatforms(videoUrl, captionParts, platforms) {
   const { hookTagline, description, hashtags } = captionParts;
-  const caption = [hookTagline, description].filter(Boolean).join('\n\n');
+  const caption = [hookTagline, description, hashtags].filter(Boolean).join('\n\n');
 
   // 1. Reserve an upload slot
   const uploadRes = await axios.post(`${BASE}/uploads`, {}, { headers: headers(), timeout: 20000 });
@@ -75,7 +75,7 @@ async function postToAllPlatforms(videoUrl, captionParts, platforms) {
         targets.push({
           connection_id,
           title: (hookTagline || 'ClipVault').slice(0, 90),
-          description: [caption, hashtags].filter(Boolean).join('\n\n').slice(0, 4900),
+          description: caption.slice(0, 4900),
           platform_options: { youtube: { privacy_status: 'public', made_for_kids: false } },
         });
       } else if (platform === 'instagram') {
