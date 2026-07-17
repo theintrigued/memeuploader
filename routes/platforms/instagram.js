@@ -1,68 +1,91 @@
 const axios = require('axios');
 const log = require('../logger');
 
-const GRAPH = 'https://graph.facebook.com/v21.0';
+// Uses ShortSync (shortsync.app) instead of calling Meta's Graph API directly.
+// You connect Instagram once through ShortSync's dashboard (Settings ->
+// Connections) — no Meta developer-account verification required on our end.
+const BASE = 'https://api.shortsync.app/v1';
+
+let connectionCache = { id: null, fetchedAt: 0 };
+const CONNECTION_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+
+function headers() {
+  const apiKey = (process.env.SHORTSYNC_API_KEY || '').trim();
+  if (!apiKey) throw new Error('SHORTSYNC_API_KEY is not set — connect Instagram at shortsync.app and add the API key to Render');
+  return { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' };
+}
+
+async function getInstagramConnectionId() {
+  if (connectionCache.id && Date.now() - connectionCache.fetchedAt < CONNECTION_CACHE_TTL_MS) {
+    return connectionCache.id;
+  }
+  const res = await axios.get(`${BASE}/connections`, { headers: headers(), timeout: 20000 });
+  const conns = res.data.data || res.data;
+  const ig = conns.find((c) => c.platform === 'instagram' && c.status === 'active') || conns.find((c) => c.platform === 'instagram');
+  if (!ig) throw new Error('No Instagram connection found on ShortSync — connect it at shortsync.app/settings?section=connections');
+  connectionCache = { id: ig.id, fetchedAt: Date.now() };
+  return ig.id;
+}
 
 async function postToInstagram(videoUrl, caption) {
-  const igId = process.env.IG_BUSINESS_ACCOUNT_ID;
-  const token = (process.env.IG_ACCESS_TOKEN || '').trim();
+  // 1. Reserve an upload slot
+  const uploadRes = await axios.post(`${BASE}/uploads`, {}, { headers: headers(), timeout: 20000 });
+  const { upload_id, presigned_url, required_headers } = uploadRes.data;
 
-  if (!igId || !token) {
-    throw new Error('Instagram env vars are not fully set (IG_ACCESS_TOKEN / IG_BUSINESS_ACCOUNT_ID)');
-  }
-
-  let creationId;
+  // 2. Stream the source video straight into the presigned PUT — avoids
+  // buffering the whole file in memory (a real problem we hit before).
+  let videoStream;
   try {
-    const createRes = await axios.post(`${GRAPH}/${igId}/media`, null, {
-      params: { media_type: 'REELS', video_url: videoUrl, caption, access_token: token },
-      timeout: 30000,
-    });
-    creationId = createRes.data.id;
+    const videoRes = await axios.get(videoUrl, { responseType: 'stream', timeout: 60000 });
+    videoStream = videoRes.data;
   } catch (err) {
-    throw friendlyInstagramError(err, 'creating media container');
+    throw new Error(`Could not download source video for ShortSync upload: ${err.message}`);
   }
 
   try {
-    await waitUntilReady(creationId, token);
+    await axios.put(presigned_url, videoStream, {
+      headers: { 'Content-Type': 'video/mp4', ...(required_headers || {}) },
+      maxBodyLength: Infinity,
+      maxContentLength: Infinity,
+      timeout: 120000,
+    });
   } catch (err) {
-    throw friendlyInstagramError(err, 'processing the uploaded video');
+    throw new Error(`ShortSync upload PUT failed: ${err.message}`);
   }
 
+  // 3. Find the connected Instagram account
+  const connectionId = await getInstagramConnectionId();
+
+  // 4. Publish
+  let postRes;
   try {
-    const publishRes = await axios.post(`${GRAPH}/${igId}/media_publish`, null, {
-      params: { creation_id: creationId, access_token: token },
-      timeout: 30000,
-    });
-    log.info('instagram', `Published, media id=${publishRes.data.id}`);
-    return { platform: 'instagram', id: publishRes.data.id };
+    postRes = await axios.post(
+      `${BASE}/posts`,
+      {
+        upload_id,
+        publish_mode: 'immediate',
+        targets: [
+          {
+            connection_id: connectionId,
+            caption,
+            platform_options: { instagram: { share_to_feed: true } },
+          },
+        ],
+      },
+      { headers: headers(), timeout: 60000 }
+    );
   } catch (err) {
-    throw friendlyInstagramError(err, 'publishing');
+    const msg = err.response?.data?.message || err.message;
+    throw new Error(`ShortSync publish failed: ${msg}`);
   }
-}
 
-async function waitUntilReady(creationId, token, { intervalMs = 5000, timeoutMs = 5 * 60 * 1000 } = {}) {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    const statusRes = await axios.get(`${GRAPH}/${creationId}`, {
-      params: { fields: 'status_code', access_token: token },
-      timeout: 30000,
-    });
-    if (statusRes.data.status_code === 'FINISHED') return;
-    if (statusRes.data.status_code === 'ERROR') throw new Error('Instagram reported an error processing the video container');
-    await new Promise((r) => setTimeout(r, intervalMs));
+  const result = (postRes.data.data || postRes.data)[0];
+  if (result?.status === 'failed') {
+    throw new Error(`ShortSync reported a failure: ${result.error?.message || JSON.stringify(result.error)}`);
   }
-  throw new Error('Timed out waiting for Instagram to finish processing the video');
-}
 
-function friendlyInstagramError(err, stage) {
-  const meta = err.response?.data?.error;
-  if (meta?.code === 190) {
-    return new Error(`Instagram token invalid/expired while ${stage} — regenerate IG_ACCESS_TOKEN (see setup guide).`);
-  }
-  if (meta?.message) {
-    return new Error(`Instagram error while ${stage}: ${meta.message}`);
-  }
-  return new Error(`Instagram request failed while ${stage}: ${err.message}`);
+  log.info('instagram', `Published via ShortSync, post id=${result?.id}`);
+  return { platform: 'instagram', id: result?.id };
 }
 
 module.exports = { postToInstagram };
