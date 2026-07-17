@@ -32,19 +32,24 @@ async function postToInstagram(videoUrl, caption) {
   const uploadRes = await axios.post(`${BASE}/uploads`, {}, { headers: headers(), timeout: 20000 });
   const { upload_id, presigned_url, required_headers } = uploadRes.data;
 
-  // 2. Stream the source video straight into the presigned PUT — avoids
-  // buffering the whole file in memory (a real problem we hit before).
-  let videoStream;
+  // 2. Download the source video, then PUT it to the presigned URL. We buffer
+  // rather than stream because presigned upload URLs (S3-style) generally
+  // require a known Content-Length and reject chunked/streamed bodies.
+  let videoBuffer;
   try {
-    const videoRes = await axios.get(videoUrl, { responseType: 'stream', timeout: 60000 });
-    videoStream = videoRes.data;
+    const videoRes = await axios.get(videoUrl, { responseType: 'arraybuffer', timeout: 60000 });
+    videoBuffer = Buffer.from(videoRes.data);
   } catch (err) {
     throw new Error(`Could not download source video for ShortSync upload: ${err.message}`);
   }
 
   try {
-    await axios.put(presigned_url, videoStream, {
-      headers: { 'Content-Type': 'video/mp4', ...(required_headers || {}) },
+    await axios.put(presigned_url, videoBuffer, {
+      headers: {
+        'Content-Type': 'video/mp4',
+        'Content-Length': videoBuffer.length,
+        ...(required_headers || {}),
+      },
       maxBodyLength: Infinity,
       maxContentLength: Infinity,
       timeout: 120000,
