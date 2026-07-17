@@ -4,7 +4,10 @@ const log = require('./logger');
 const CHECKS = [
   ['APP_SECRET', []],
   ['INSIDERMEMES_API_TOKEN', []],
-  ['SHORTSYNC_API_KEY', ['youtube', 'instagram', 'tiktok']],
+  ['SHORTSYNC_API_KEY', ['youtube', 'instagram']],
+  ['TIKTOK_CLIENT_KEY', ['tiktok']],
+  ['TIKTOK_CLIENT_SECRET', ['tiktok']],
+  ['TIKTOK_REFRESH_TOKEN', ['tiktok']],
 ];
 
 function checkEnv() {
