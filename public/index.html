@@ -132,6 +132,7 @@
     <button class="btn-secondary" id="trendingBtn" type="button" onclick="loadTrending('viral')" style="margin-bottom:0; flex:1; font-size:13px; padding:12px 6px;">🔥 Trending topics</button>
     <button class="btn-secondary" id="relatableBtn" type="button" onclick="loadTrending('relatable')" style="margin-bottom:0; flex:1; font-size:13px; padding:12px 6px;">🌍 Relatable moments</button>
   </div>
+  <button class="btn-secondary" id="savedBtn" type="button" onclick="loadSaved()" style="margin-top:8px; font-size:13px;">📋 Saved prompts (not yet used)</button>
   <div id="trendingList"></div>
 
   <div class="card" style="margin-top:16px;">
@@ -172,37 +173,79 @@
     const platformNames = { youtube: 'YouTube', instagram: 'Instagram', tiktok: 'TikTok' };
     let pollTimer = null;
 
+    function renderChips(list) {
+      window._trending = list;
+      const el = document.getElementById('trendingList');
+      if (list.length === 0) {
+        el.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:8px 0;">Nothing here yet.</div>';
+        return;
+      }
+      el.innerHTML = list.map((s, i) => {
+        const hookLine = s.newsHook ? `<span class="tagline" style="color:var(--accent2);">📰 ${escapeHtml(s.newsHook)}</span>` : '';
+        return `<div class="chip" onclick="useTagline(${i})"><strong>${escapeHtml(s.topic)}</strong><span class="tagline">${escapeHtml(s.tagline)}</span>${hookLine}</div>`;
+      }).join('');
+    }
+
     async function loadTrending(mode) {
       const btn = document.getElementById(mode === 'relatable' ? 'relatableBtn' : 'trendingBtn');
-      const otherBtn = document.getElementById(mode === 'relatable' ? 'trendingBtn' : 'relatableBtn');
+      const allBtns = [document.getElementById('trendingBtn'), document.getElementById('relatableBtn'), document.getElementById('savedBtn')];
       const list = document.getElementById('trendingList');
       const secret = document.getElementById('secret').value;
       const originalLabel = btn.textContent;
-      btn.disabled = true;
-      otherBtn.disabled = true;
+      allBtns.forEach((b) => (b.disabled = true));
       btn.innerHTML = '<span class="spinner"></span>Searching...';
       list.innerHTML = '';
       try {
         const res = await fetch('/trending?secret=' + encodeURIComponent(secret) + '&mode=' + mode);
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Request failed');
-        window._trending = data.suggestions;
-        list.innerHTML = data.suggestions.map((s, i) => {
-          const hookLine = s.newsHook ? `<span class="tagline" style="color:var(--accent2);">📰 ${escapeHtml(s.newsHook)}</span>` : '';
-          return `<div class="chip" onclick="useTagline(${i})"><strong>${escapeHtml(s.topic)}</strong><span class="tagline">${escapeHtml(s.tagline)}</span>${hookLine}</div>`;
-        }).join('');
+        renderChips(data.suggestions);
       } catch (e) {
         list.innerHTML = '<div style="color:var(--red);font-size:13px;padding:8px 0;">Failed to load: ' + escapeHtml(e.message) + '</div>';
       }
-      btn.disabled = false;
-      otherBtn.disabled = false;
+      allBtns.forEach((b) => (b.disabled = false));
       btn.textContent = originalLabel;
     }
 
+    async function loadSaved() {
+      const btn = document.getElementById('savedBtn');
+      const allBtns = [document.getElementById('trendingBtn'), document.getElementById('relatableBtn'), document.getElementById('savedBtn')];
+      const list = document.getElementById('trendingList');
+      const secret = document.getElementById('secret').value;
+      allBtns.forEach((b) => (b.disabled = true));
+      btn.innerHTML = '<span class="spinner"></span>Loading...';
+      list.innerHTML = '';
+      try {
+        const res = await fetch('/prompts?secret=' + encodeURIComponent(secret));
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Request failed');
+        const unused = data.prompts.filter((p) => !p.used);
+        const usedCount = data.prompts.length - unused.length;
+        renderChips(unused);
+        if (usedCount > 0) {
+          document.getElementById('trendingList').insertAdjacentHTML(
+            'beforeend',
+            `<div style="color:var(--muted);font-size:12px;padding:8px 0;">${usedCount} previously used, hidden</div>`
+          );
+        }
+      } catch (e) {
+        list.innerHTML = '<div style="color:var(--red);font-size:13px;padding:8px 0;">Failed to load: ' + escapeHtml(e.message) + '</div>';
+      }
+      allBtns.forEach((b) => (b.disabled = false));
+      btn.textContent = '📋 Saved prompts (not yet used)';
+    }
+
     function useTagline(i) {
+      window._selectedPromptId = window._trending[i].id || null;
       document.getElementById('prompt').value = window._trending[i].tagline;
       document.getElementById('prompt').scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
+
+    // If the person edits the prompt after picking a saved suggestion, don't
+    // mark that suggestion as used — they may have changed it substantially.
+    document.getElementById('prompt').addEventListener('input', () => {
+      window._selectedPromptId = null;
+    });
 
     async function submitPrompt() {
       const btn = document.getElementById('submitBtn');
@@ -213,6 +256,7 @@
       const count = document.getElementById('count').value;
       const description = document.getElementById('description').value;
       const hashtags = document.getElementById('hashtags').value;
+      const promptId = window._selectedPromptId || null;
 
       if (!prompt.trim()) {
         alert('Enter a prompt first.');
@@ -230,7 +274,7 @@
         const res = await fetch('/create', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ secret, prompt, mediaType, count, description, hashtags }),
+          body: JSON.stringify({ secret, prompt, mediaType, count, description, hashtags, promptId }),
         });
         const data = await res.json();
         if (!res.ok) {

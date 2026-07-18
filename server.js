@@ -6,6 +6,7 @@ const log = require('./routes/logger');
 const { checkEnv } = require('./routes/env-check');
 const { generateVideoMemes } = require('./routes/memes');
 const { getTrendingSuggestions } = require('./routes/trending');
+const { getPromptsList, addPrompts, markPromptUsed } = require('./routes/prompt-store');
 const { postToAllPlatforms } = require('./routes/platforms/shortsync');
 const { postToTikTok } = require('./routes/platforms/tiktok');
 
@@ -85,6 +86,11 @@ app.post('/create', (req, res) => {
 
   const job = newJob();
   res.json({ jobId: job.id }); // respond immediately, background work continues after
+
+  const promptId = req.body.promptId;
+  if (promptId) {
+    markPromptUsed(promptId).catch((err) => log.warn('create', `Could not mark prompt ${promptId} used: ${err.message}`));
+  }
 
   runJob(job, { prompt, description, hashtags, mediaType, count, platforms }).catch((err) => {
     job.status = 'error';
@@ -172,9 +178,30 @@ app.get('/trending', async (req, res) => {
   const mode = req.query.mode === 'relatable' ? 'relatable' : 'viral';
   try {
     const suggestions = await getTrendingSuggestions(mode);
-    res.json({ suggestions, mode });
+    let responseSuggestions = suggestions;
+    let persisted = false;
+    try {
+      const stored = await addPrompts(suggestions, mode);
+      const newTaglines = new Set(suggestions.map((s) => s.tagline.toLowerCase().trim()));
+      responseSuggestions = stored.filter((p) => newTaglines.has(p.tagline.toLowerCase().trim()));
+      persisted = true;
+    } catch (err) {
+      log.warn('trending', `Generated suggestions but could not persist them: ${err.message}`);
+    }
+    res.json({ suggestions: responseSuggestions, mode, persisted });
   } catch (err) {
     log.error('trending', `Failed (mode=${mode}):`, err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/prompts', async (req, res) => {
+  if (!requireSecret(req, res)) return;
+  try {
+    const prompts = await getPromptsList();
+    res.json({ prompts });
+  } catch (err) {
+    log.error('prompts', 'Failed to load stored prompts:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
