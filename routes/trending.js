@@ -22,7 +22,7 @@ async function getInsiderMemesCategories() {
   }
 }
 
-function buildSystemPrompt(categories, performanceSummary) {
+function buildSystemPrompt(categories, performanceSummary, mode) {
   const categoryLine = categories.length > 0
     ? `Insider Memes' template library is organized into these categories: ${categories.join(', ')}. Favor topics whose emotional tone clearly fits one of these — it improves template matching.`
     : '';
@@ -31,18 +31,11 @@ function buildSystemPrompt(categories, performanceSummary) {
     ? `\nHere's what has actually performed well on this channel recently, best first (caption — platform, engagement score):\n${performanceSummary.map((p) => `- "${p.caption.slice(0, 80)}" — ${p.platform}, score ${p.engagementScore}`).join('\n')}\nLean into similar emotional beats, pacing, or subject matter where it fits a current trend — don't just repeat the same topic, but notice what's working.`
     : '';
 
-  return `You suggest viral short-form video topics for a meme-video channel that turns
-Twitch/streamer clips into TikTok/Reels/Shorts. Style: "operatic reaction meets petty modern stakes" —
-high-drama visuals paired with absurdly low-stakes captions. Broad, relatable humor, not niche.
-
-Search the web for what's trending RIGHT NOW in gaming, Twitch, streamer drama, and general meme
-culture (last few days). Then propose 8 short video concepts.
-
-IMPORTANT — how the "tagline" field gets used: it is NOT the final caption. It is fed as a raw text
+  const sharedRules = `IMPORTANT — how the "tagline" field gets used: it is NOT the final caption. It is fed as a raw text
 prompt into Insider Memes' generator, which does keyword extraction to pick a matching template and
 writes its OWN caption. A fully-written joke confuses that matching step. Write "tagline" the way
 Insider Memes' own examples do — a short, vivid SITUATION or EMOTION, not a punchline:
-  Good: "streamer rage quits after losing to a bot"
+  Good: "stuck in traffic for two hours on a Friday"
   Good: "finding out your ex is dating your friend"
   Bad: "Watch him crumble like a disgraced king losing his throne to a peasant" (too written, too long)
 Keep each tagline under 12 words, concrete, keyword-rich, one clear emotional beat.
@@ -50,10 +43,44 @@ ${categoryLine}
 ${performanceLine}
 
 Respond ONLY with a raw JSON array, no markdown fences, no preamble. Each item:
-{ "topic": "3-6 word trending topic", "tagline": "a short situational prompt, under 12 words, ready to paste into Insider Memes" }`;
+{ "topic": "3-6 word topic", "tagline": "a short situational prompt, under 12 words, ready to paste into Insider Memes" }`;
+
+  if (mode === 'relatable') {
+    return `You suggest EVERYDAY-RELATABLE video topics for a meme-video channel. Style: "operatic reaction
+meets petty modern stakes" — high-drama visuals paired with absurdly low-stakes captions.
+
+Your job right now is specifically to find UNIVERSAL, WIDELY-RELATABLE situations — the kind almost
+anyone has lived through, regardless of whether they follow gaming or internet culture. This is
+different from chasing niche internet trends: a video about a streamer losing a match only lands with
+people who watch that streamer, but "stuck in traffic for two hours" lands with almost everyone.
+
+Search the web for big news or viral events happening right now that a lot of people are personally
+experiencing or reacting to — extreme weather, travel chaos, a massive traffic jam, a price spike, a
+long queue/wait somewhere, a widespread outage, back-to-school/holiday stress, a sports event most
+casual people have an opinion on, etc. Then translate each into a small, funny, universally-relatable
+personal situation tied to that real event — the news event gives it timeliness and grounding, but the
+tagline itself should describe the everyday moment, not the news headline.
+
+Example chain: real event = "major highway pileup causes 3-hour delays" -> tagline = "stuck in traffic
+for two hours with a dying phone battery"
+
+Propose 8 concepts, each grounded in something actually happening right now.
+
+${sharedRules}`;
+  }
+
+  // default: 'viral' — original gaming/streamer/internet-culture mode
+  return `You suggest viral short-form video topics for a meme-video channel that turns
+Twitch/streamer clips into TikTok/Reels/Shorts. Style: "operatic reaction meets petty modern stakes" —
+high-drama visuals paired with absurdly low-stakes captions. Broad, relatable humor, not niche.
+
+Search the web for what's trending RIGHT NOW in gaming, Twitch, streamer drama, and general meme
+culture (last few days). Then propose 8 short video concepts.
+
+${sharedRules}`;
 }
 
-async function getTrendingSuggestions() {
+async function getTrendingSuggestions(mode = 'viral') {
   if (!process.env.ANTHROPIC_API_KEY) {
     throw new Error('ANTHROPIC_API_KEY is not set — trending suggestions are unavailable');
   }
@@ -61,13 +88,17 @@ async function getTrendingSuggestions() {
   const categories = await getInsiderMemesCategories();
   const performanceSummary = await getPerformanceSummary();
 
+  const userMessage = mode === 'relatable'
+    ? 'Find real news/events happening right now and give me 8 relatable everyday-situation video ideas grounded in them.'
+    : 'Give me 8 trending video ideas for right now.';
+
   const res = await axios.post(
     'https://api.anthropic.com/v1/messages',
     {
       model: 'claude-sonnet-5',
       max_tokens: 4096,
-      system: buildSystemPrompt(categories, performanceSummary),
-      messages: [{ role: 'user', content: 'Give me 8 trending video ideas for right now.' }],
+      system: buildSystemPrompt(categories, performanceSummary, mode),
+      messages: [{ role: 'user', content: userMessage }],
       tools: [{ type: 'web_search_20250305', name: 'web_search' }],
     },
     {

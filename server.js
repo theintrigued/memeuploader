@@ -169,11 +169,12 @@ app.get('/status/:jobId', (req, res) => {
 
 app.get('/trending', async (req, res) => {
   if (!requireSecret(req, res)) return;
+  const mode = req.query.mode === 'relatable' ? 'relatable' : 'viral';
   try {
-    const suggestions = await getTrendingSuggestions();
-    res.json({ suggestions });
+    const suggestions = await getTrendingSuggestions(mode);
+    res.json({ suggestions, mode });
   } catch (err) {
-    log.error('trending', 'Failed:', err.message);
+    log.error('trending', `Failed (mode=${mode}):`, err.message);
     res.status(500).json({ error: err.message });
   }
 });

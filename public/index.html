@@ -108,7 +108,9 @@
     .badge.generating, .badge.posting { background: #2a2a35; color: var(--accent2); }
     .badge.done { background: rgba(52, 211, 153, 0.15); color: var(--green); }
     .badge.error { background: rgba(248, 113, 113, 0.15); color: var(--red); }
+    .badge.manual { background: rgba(34, 211, 238, 0.15); color: var(--accent2); }
     .error-detail { color: var(--red); font-size: 12px; margin-top: 2px; opacity: 0.85; }
+    .download-link { display: inline-block; margin-top: 4px; font-size: 12px; color: var(--accent2); }
 
     .spinner {
       display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(255,255,255,0.3);
@@ -126,7 +128,10 @@
     <input id="secret" type="password" placeholder="••••••••" style="margin-bottom:0;" />
   </div>
 
-  <button class="btn-secondary" id="trendingBtn" type="button" onclick="loadTrending()">🔥 Suggest trending topics</button>
+  <div style="display:flex; gap:8px;">
+    <button class="btn-secondary" id="trendingBtn" type="button" onclick="loadTrending('viral')" style="margin-bottom:0; flex:1; font-size:13px; padding:12px 6px;">🔥 Trending topics</button>
+    <button class="btn-secondary" id="relatableBtn" type="button" onclick="loadTrending('relatable')" style="margin-bottom:0; flex:1; font-size:13px; padding:12px 6px;">🌍 Relatable moments</button>
+  </div>
   <div id="trendingList"></div>
 
   <div class="card" style="margin-top:16px;">
@@ -167,26 +172,31 @@
     const platformNames = { youtube: 'YouTube', instagram: 'Instagram', tiktok: 'TikTok' };
     let pollTimer = null;
 
-    async function loadTrending() {
-      const btn = document.getElementById('trendingBtn');
+    async function loadTrending(mode) {
+      const btn = document.getElementById(mode === 'relatable' ? 'relatableBtn' : 'trendingBtn');
+      const otherBtn = document.getElementById(mode === 'relatable' ? 'trendingBtn' : 'relatableBtn');
       const list = document.getElementById('trendingList');
       const secret = document.getElementById('secret').value;
+      const originalLabel = btn.textContent;
       btn.disabled = true;
-      btn.innerHTML = '<span class="spinner"></span>Searching the web...';
+      otherBtn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span>Searching...';
       list.innerHTML = '';
       try {
-        const res = await fetch('/trending?secret=' + encodeURIComponent(secret));
+        const res = await fetch('/trending?secret=' + encodeURIComponent(secret) + '&mode=' + mode);
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Request failed');
         window._trending = data.suggestions;
-        list.innerHTML = data.suggestions.map((s, i) =>
-          `<div class="chip" onclick="useTagline(${i})"><strong>${escapeHtml(s.topic)}</strong><span class="tagline">${escapeHtml(s.tagline)}</span></div>`
-        ).join('');
+        list.innerHTML = data.suggestions.map((s, i) => {
+          const hookLine = s.newsHook ? `<span class="tagline" style="color:var(--accent2);">📰 ${escapeHtml(s.newsHook)}</span>` : '';
+          return `<div class="chip" onclick="useTagline(${i})"><strong>${escapeHtml(s.topic)}</strong><span class="tagline">${escapeHtml(s.tagline)}</span>${hookLine}</div>`;
+        }).join('');
       } catch (e) {
         list.innerHTML = '<div style="color:var(--red);font-size:13px;padding:8px 0;">Failed to load: ' + escapeHtml(e.message) + '</div>';
       }
       btn.disabled = false;
-      btn.textContent = '🔥 Suggest trending topics';
+      otherBtn.disabled = false;
+      btn.textContent = originalLabel;
     }
 
     function useTagline(i) {
@@ -280,7 +290,10 @@
           const badgeClass = isError ? 'error' : status;
           const badgeLabel = isManual ? 'manual' : (isError ? 'error' : status);
           const errorDetail = isError ? `<div class="error-detail">${escapeHtml(status.slice(7))}</div>` : '';
-          return `<div><div class="platform-row"><span>${platformNames[platform] || platform}</span><span class="badge ${badgeClass}">${badgeLabel}</span></div>${errorDetail}</div>`;
+          const downloadLink = isManual
+            ? `<div><a class="download-link" href="${v.videoUrl}" download target="_blank" rel="noopener">⬇ Download video, then open TikTok to post</a></div>`
+            : '';
+          return `<div><div class="platform-row"><span>${platformNames[platform] || platform}</span><span class="badge ${badgeClass}">${badgeLabel}</span></div>${errorDetail}${downloadLink}</div>`;
         }).join('');
         return `<div class="video-block"><strong>Video ${i + 1}</strong>${rows}</div>`;
       }).join('');
