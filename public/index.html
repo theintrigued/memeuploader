@@ -117,6 +117,17 @@
       border-top-color: var(--text); border-radius: 50%; animation: spin 0.7s linear infinite; margin-right: 6px; vertical-align: -2px;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
+
+    .switch-row { display: flex; align-items: center; justify-content: space-between; }
+    .switch { position: relative; display: inline-block; width: 46px; height: 26px; flex-shrink: 0; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .switch-track { position: absolute; cursor: pointer; inset: 0; background: #2a2a35; border-radius: 26px; transition: 0.2s; }
+    .switch-track:before { position: absolute; content: ""; height: 20px; width: 20px; left: 3px; bottom: 3px; background: white; border-radius: 50%; transition: 0.2s; }
+    .switch input:checked + .switch-track { background: linear-gradient(90deg, var(--accent), var(--accent2)); }
+    .switch input:checked + .switch-track:before { transform: translateX(20px); }
+    .autopilot-stat { font-size: 12px; color: var(--muted); margin-top: 4px; }
+    .autopilot-stat b { color: var(--text); }
+    .learnings-box { font-size: 12px; color: var(--muted); margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); line-height: 1.5; }
   </style>
 </head>
 <body>
@@ -125,8 +136,27 @@
 
   <div class="card">
     <label for="secret">App secret</label>
-    <input id="secret" type="password" placeholder="••••••••" style="margin-bottom:0;" />
+    <input id="secret" type="password" placeholder="••••••••" style="margin-bottom:0;" onchange="loadAutopilotStatus()" />
   </div>
+
+  <div class="card" id="autopilotCard">
+    <div class="switch-row">
+      <div>
+        <div style="font-weight:700; font-size:14px;">🤖 Autopilot</div>
+        <div class="autopilot-stat" id="autopilotSummary">Enter your app secret to load status</div>
+      </div>
+      <label class="switch">
+        <input type="checkbox" id="autopilotToggle" onchange="toggleAutopilot()" />
+        <span class="switch-track"></span>
+      </label>
+    </div>
+    <div id="autopilotLearnings"></div>
+  </div>
+
+  <button class="btn-secondary" id="autoPickBtn" type="button" onclick="autoPick()" style="font-size:13px;">🎲 Auto-pick a saved prompt & post now</button>
+
+  <div style="height:16px;"></div>
+  <div class="subtitle" style="margin-bottom:8px;">— or generate manually —</div>
 
   <div style="display:flex; gap:8px;">
     <button class="btn-secondary" id="trendingBtn" type="button" onclick="loadTrending('viral')" style="margin-bottom:0; flex:1; font-size:13px; padding:12px 6px;">🔥 Trending topics</button>
@@ -172,6 +202,86 @@
   <script>
     const platformNames = { youtube: 'YouTube', instagram: 'Instagram', tiktok: 'TikTok' };
     let pollTimer = null;
+
+    function fmtTime(ms) {
+      if (!ms) return null;
+      return new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+
+    async function loadAutopilotStatus() {
+      const secret = document.getElementById('secret').value;
+      const summary = document.getElementById('autopilotSummary');
+      const learningsEl = document.getElementById('autopilotLearnings');
+      const toggle = document.getElementById('autopilotToggle');
+      if (!secret) return;
+      try {
+        const res = await fetch('/autopilot/status?secret=' + encodeURIComponent(secret));
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Request failed');
+        toggle.checked = !!data.enabled;
+        if (!data.date) {
+          summary.textContent = data.enabled ? 'On — starts researching on the next tick' : 'Off';
+        } else {
+          const next = data.nextPostTime ? `next: ${fmtTime(data.nextPostTime)} "${data.nextPostTopic || ''}"` : 'no posts left today';
+          summary.innerHTML = `<b>${data.postedToday}/${data.totalScheduledToday}</b> posted today · ${next}`;
+        }
+        learningsEl.innerHTML = data.learnings
+          ? `<div class="learnings-box">🧠 ${escapeHtml(data.learnings)}</div>`
+          : '';
+      } catch (e) {
+        summary.textContent = 'Could not load status: ' + e.message;
+      }
+    }
+
+    async function toggleAutopilot() {
+      const secret = document.getElementById('secret').value;
+      const toggle = document.getElementById('autopilotToggle');
+      const enabled = toggle.checked;
+      toggle.disabled = true;
+      try {
+        const res = await fetch('/autopilot/toggle', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ secret, enabled }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Request failed');
+        await loadAutopilotStatus();
+      } catch (e) {
+        alert('Could not toggle autopilot: ' + e.message);
+        toggle.checked = !enabled; // revert on failure
+      }
+      toggle.disabled = false;
+    }
+
+    async function autoPick() {
+      const btn = document.getElementById('autoPickBtn');
+      const secret = document.getElementById('secret').value;
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span>Picking & starting...';
+      try {
+        const res = await fetch('/auto-pick', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ secret }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Request failed');
+        document.getElementById('progressWrap').style.display = 'block';
+        document.getElementById('stepText').innerHTML = `<span class="spinner"></span>Auto-picked: "${escapeHtml(data.picked?.tagline || '')}"`;
+        document.getElementById('progressBarInner').style.width = '0%';
+        document.getElementById('videoList').innerHTML = '';
+        pollJob(data.jobId);
+      } catch (e) {
+        alert('Auto-pick failed: ' + e.message);
+      }
+      btn.disabled = false;
+      btn.textContent = '🎲 Auto-pick a saved prompt & post now';
+    }
+
+    // Refresh autopilot status periodically while the page is open, so the
+    // switch reflects reality even if you toggled it from another device.
+    setInterval(() => { if (document.getElementById('secret').value) loadAutopilotStatus(); }, 30000);
 
     function renderChips(list) {
       window._trending = list;

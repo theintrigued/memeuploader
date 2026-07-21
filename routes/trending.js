@@ -22,13 +22,17 @@ async function getInsiderMemesCategories() {
   }
 }
 
-function buildSystemPrompt(categories, performanceSummary, mode) {
+function buildSystemPrompt(categories, performanceSummary, mode, learnings) {
   const categoryLine = categories.length > 0
     ? `Insider Memes' template library is organized into these categories: ${categories.join(', ')}. Favor topics whose emotional tone clearly fits one of these — it improves template matching.`
     : '';
 
   const performanceLine = performanceSummary && performanceSummary.length > 0
     ? `\nHere's what has actually performed well on this channel recently, best first (caption — platform, engagement score):\n${performanceSummary.map((p) => `- "${p.caption.slice(0, 80)}" — ${p.platform}, score ${p.engagementScore}`).join('\n')}\nLean into similar emotional beats, pacing, or subject matter where it fits a current trend — don't just repeat the same topic, but notice what's working.`
+    : '';
+
+  const learningsLine = learnings
+    ? `\nNotes from yesterday's autonomous run (what worked, what to try again, what to drop):\n${learnings}\n`
     : '';
 
   const sharedRules = `IMPORTANT — how the "tagline" field gets used: it is NOT the final caption. It is fed as a raw text
@@ -41,7 +45,7 @@ Insider Memes' own examples do — a short, vivid SITUATION or EMOTION, not a pu
 Keep each tagline under 12 words, concrete, keyword-rich, one clear emotional beat.
 ${categoryLine}
 ${performanceLine}
-
+${learningsLine}
 Respond ONLY with a raw JSON array, no markdown fences, no preamble. Each item:
 { "topic": "3-6 word topic", "tagline": "a short situational prompt, under 12 words, ready to paste into Insider Memes" }`;
 
@@ -80,7 +84,7 @@ culture (last few days). Then propose 8 short video concepts.
 ${sharedRules}`;
 }
 
-async function getTrendingSuggestions(mode = 'viral') {
+async function getTrendingSuggestions(mode = 'viral', learnings = null) {
   if (!process.env.ANTHROPIC_API_KEY) {
     throw new Error('ANTHROPIC_API_KEY is not set — trending suggestions are unavailable');
   }
@@ -97,7 +101,7 @@ async function getTrendingSuggestions(mode = 'viral') {
     {
       model: 'claude-sonnet-5',
       max_tokens: 4096,
-      system: buildSystemPrompt(categories, performanceSummary, mode),
+      system: buildSystemPrompt(categories, performanceSummary, mode, learnings),
       messages: [{ role: 'user', content: userMessage }],
       tools: [{ type: 'web_search_20250305', name: 'web_search' }],
     },
@@ -131,4 +135,64 @@ async function getTrendingSuggestions(mode = 'viral') {
   }
 }
 
-module.exports = { getTrendingSuggestions };
+// Generates N new taglines "branching" from a small set of already-researched
+// base topics — no web_search tool, so it's cheap. Used by the autopilot to
+// stretch one day's research into many distinct posts without re-searching.
+async function generateBranchedTaglines(baseTopics, count) {
+  if (!process.env.ANTHROPIC_API_KEY) {
+    throw new Error('ANTHROPIC_API_KEY is not set — cannot generate branched taglines');
+  }
+  if (baseTopics.length === 0) {
+    throw new Error('No base topics to branch from');
+  }
+
+  const topicList = baseTopics.map((t, i) => `${i + 1}. [${t.mode}] "${t.topic}" — example angle: "${t.tagline}"`).join('\n');
+
+  const system = `You write short video prompts for Insider Memes, a meme-video generator. It does
+keyword extraction on your text to pick a matching template and writes its own on-screen caption —
+so your job is to give it a short, vivid SITUATION or EMOTION (under 12 words), not a finished joke.
+
+You'll be given a small list of already-researched base topics (each already vetted as trending or
+broadly relatable). Generate ${count} NEW taglines total by branching off these — different specific
+angles, moments, or phrasings on the same underlying themes, so the batch doesn't feel repetitive
+even though it's drawn from a small topic set. Distribute roughly evenly across the given topics.
+Stay in the same style as the example angle for each topic (don't drift into unrelated new subjects).
+
+Respond ONLY with a raw JSON array, no markdown fences, no preamble. Each item:
+{ "topic": "which base topic this branches from, 3-6 words", "tagline": "a new short situational prompt, under 12 words", "mode": "viral or relatable, matching its base topic" }`;
+
+  const res = await axios.post(
+    'https://api.anthropic.com/v1/messages',
+    {
+      model: 'claude-sonnet-5',
+      max_tokens: 4096,
+      system,
+      messages: [{ role: 'user', content: `Base topics:\n${topicList}\n\nGenerate ${count} branched taglines now.` }],
+    },
+    {
+      headers: {
+        'x-api-key': process.env.ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+        'Content-Type': 'application/json',
+      },
+      timeout: 60000,
+    }
+  );
+
+  const textBlock = res.data.content.filter((b) => b.type === 'text').map((b) => b.text).join('\n');
+  const cleaned = textBlock.replace(/```json|```/g, '').trim();
+
+  try {
+    return JSON.parse(cleaned);
+  } catch (e) {
+    const objectMatches = cleaned.match(/\{\s*"topic"[\s\S]*?\}/g) || [];
+    const salvaged = [];
+    for (const chunk of objectMatches) {
+      try { salvaged.push(JSON.parse(chunk)); } catch (_) { /* incomplete, skip */ }
+    }
+    if (salvaged.length > 0) return salvaged;
+    throw new Error('Could not parse any branched taglines from Claude response');
+  }
+}
+
+module.exports = { getTrendingSuggestions, generateBranchedTaglines };

@@ -62,6 +62,17 @@
 - Insider Memes: needs a paid plan for video generation (Basic $/mo+)
 - YouTube/Instagram/TikTok APIs: free, but TikTok direct-publish requires audit approval
 
+## Autopilot (fully autonomous posting)
+1. Create a free database at upstash.com → copy `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` into Render (required — this is where the daily schedule and learnings live).
+2. Set `AUTOPILOT_TZ_OFFSET_HOURS` to your timezone's UTC offset (e.g. `4` for Gulf Standard Time) so the daily schedule lines up with your actual day.
+3. `AUTOPILOT_POSTS_PER_DAY` (default 20) and `AUTOPILOT_WINDOW_HOURS` (default 2) control the schedule shape — posts are split as evenly as possible across the day's windows, randomly timed within each.
+4. **Set up an external pinger** — Render's free tier has no cron and sleeps when idle, so something needs to hit the server periodically. Go to cron-job.org (free) → create a job hitting `https://your-render-url.onrender.com/cron/tick?secret=YOUR_APP_SECRET` every 5 minutes.
+5. Open the app → flip the **🤖 Autopilot** switch on. That's the only place enable/disable actually lives — it's stored, not an env var, so it takes effect instantly with no redeploy.
+
+What it does each day: runs one web search per mode (viral + relatable) the first time it wakes up that day, generates a day's worth of distinct taglines "branching" from that single search (no repeated searching = fewer tokens), spreads them randomly across the day per the schedule, and posts each one when its time arrives. At the end of each day it reviews what performed well (via ShortSync analytics) and writes itself a short note that biases tomorrow's search and topic choices.
+
+The switch never removes the manual flow above — Trending topics / Relatable moments / Saved prompts / Generate & Post all keep working exactly as before regardless of whether autopilot is on, so you can always fall back to doing it by hand.
+
 ## Diagnosing problems
 - Visit `https://your-render-url.onrender.com/health` any time — it reports which env vars are
   missing for your configured `POST_TO` platforms, without ever exposing the actual secret values.

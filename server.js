@@ -4,11 +4,12 @@ const path = require('path');
 const crypto = require('crypto');
 const log = require('./routes/logger');
 const { checkEnv } = require('./routes/env-check');
-const { generateVideoMemes } = require('./routes/memes');
 const { getTrendingSuggestions } = require('./routes/trending');
-const { getPromptsList, addPrompts, markPromptUsed } = require('./routes/prompt-store');
-const { postToAllPlatforms } = require('./routes/platforms/shortsync');
-const { postToTikTok } = require('./routes/platforms/tiktok');
+const { getPromptsList, addPrompts, markPromptUsed, pickOldestUnused } = require('./routes/prompt-store');
+const { newJob, getJob } = require('./routes/job-store');
+const { runVideoJob } = require('./routes/generate-and-post');
+const { tick } = require('./routes/autopilot');
+const { getState: getAutopilotState, getEnabled: getAutopilotEnabled, setEnabled: setAutopilotEnabled, getLearnings: getAutopilotLearnings } = require('./routes/autopilot-store');
 
 // Crash guards: log and keep running instead of the process dying silently
 // mid-job (which is exactly what made a previous TikTok upload look like it
@@ -21,34 +22,7 @@ app.use(express.json({ limit: '1mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(require('./routes/tiktok-oauth'));
 
-const DEFAULT_HASHTAGS = '#fyp #comedy #memes #viral #funny';
 const MAX_PROMPT_LEN = 500;
-const JOB_TTL_MS = 2 * 60 * 60 * 1000; // 2 hours — old jobs get swept to avoid an unbounded memory leak
-
-const jobs = {};
-
-function sweepOldJobs() {
-  const cutoff = Date.now() - JOB_TTL_MS;
-  for (const [id, job] of Object.entries(jobs)) {
-    if (job.createdAt < cutoff) delete jobs[id];
-  }
-}
-setInterval(sweepOldJobs, 30 * 60 * 1000).unref();
-
-function newJob() {
-  const id = crypto.randomUUID();
-  jobs[id] = {
-    id,
-    createdAt: Date.now(),
-    status: 'starting', // starting | generating | posting | done | error
-    step: 'Generating video(s)...',
-    totalSteps: 1,
-    completedSteps: 0,
-    videos: [],
-    error: null,
-  };
-  return jobs[id];
-}
 
 function timingSafeEqual(a, b) {
   const bufA = Buffer.from(String(a || ''));
@@ -66,25 +40,36 @@ function requireSecret(req, res) {
   return true;
 }
 
-app.post('/create', (req, res) => {
-  if (!requireSecret(req, res)) return;
+function validatedCreateParams(body) {
+  const prompt = (body.prompt || '').trim();
+  if (!prompt) throw { status: 400, message: 'prompt is required' };
+  if (prompt.length > MAX_PROMPT_LEN) throw { status: 400, message: `prompt too long (max ${MAX_PROMPT_LEN} chars)` };
 
-  const prompt = (req.body.prompt || '').trim();
-  if (!prompt) return res.status(400).json({ error: 'prompt is required' });
-  if (prompt.length > MAX_PROMPT_LEN) return res.status(400).json({ error: `prompt too long (max ${MAX_PROMPT_LEN} chars)` });
-
-  const description = (req.body.description || '').trim();
-  const hashtags = [DEFAULT_HASHTAGS, (req.body.hashtags || '').trim()].filter(Boolean).join(' ');
-  const mediaType = ['videos', 'images', 'all'].includes(req.body.mediaType) ? req.body.mediaType : 'videos';
-  let count = parseInt(req.body.count, 10);
+  const description = (body.description || '').trim();
+  const hashtags = (body.hashtags || '').trim();
+  const mediaType = ['videos', 'images', 'all'].includes(body.mediaType) ? body.mediaType : 'videos';
+  let count = parseInt(body.count, 10);
   if (!Number.isInteger(count) || count < 1 || count > 12) count = 1;
 
   const { platforms, missing } = checkEnv();
   if (platforms.length > 0 && missing.length > 0) {
-    return res.status(500).json({ error: `Server is misconfigured — missing env vars: ${missing.join(', ')}` });
+    throw { status: 500, message: `Server is misconfigured — missing env vars: ${missing.join(', ')}` };
   }
 
-  const job = newJob();
+  return { prompt, description, hashtags, mediaType, count, platforms };
+}
+
+app.post('/create', (req, res) => {
+  if (!requireSecret(req, res)) return;
+
+  let params;
+  try {
+    params = validatedCreateParams(req.body);
+  } catch (err) {
+    return res.status(err.status || 500).json({ error: err.message });
+  }
+
+  const job = newJob('manual');
   res.json({ jobId: job.id }); // respond immediately, background work continues after
 
   const promptId = req.body.promptId;
@@ -92,83 +77,47 @@ app.post('/create', (req, res) => {
     markPromptUsed(promptId).catch((err) => log.warn('create', `Could not mark prompt ${promptId} used: ${err.message}`));
   }
 
-  runJob(job, { prompt, description, hashtags, mediaType, count, platforms }).catch((err) => {
+  runVideoJob(job, params).catch((err) => {
     job.status = 'error';
     job.error = err.message;
     log.error('create', `Job ${job.id} failed fatally:`, err.message);
   });
 });
 
-async function runJob(job, { prompt, description, hashtags, mediaType, count, platforms }) {
-  job.status = 'generating';
-  job.step = `Generating ${count} video(s) with Insider Memes...`;
-  log.info('create', `[${job.id}] generating: "${prompt}" (mediaType=${mediaType}, count=${count})`);
+// Picks the oldest unused saved prompt and immediately generates+posts from
+// it — the "surprise me" button, no browsing required.
+app.post('/auto-pick', async (req, res) => {
+  if (!requireSecret(req, res)) return;
 
-  const memes = await generateVideoMemes(prompt, { mediaType, count });
-  log.info('create', `[${job.id}] ${memes.length} video(s) ready`);
+  let picked;
+  try {
+    picked = await pickOldestUnused();
+  } catch (err) {
+    return res.status(500).json({ error: `Could not read saved prompts: ${err.message}` });
+  }
+  if (!picked) return res.status(404).json({ error: 'No unused saved prompts — generate some first' });
 
-  job.totalSteps = memes.length * (platforms.length || 1);
-  job.videos = memes.map((m) => ({
-    videoUrl: m.url,
-    tagline: m.tagline,
-    platforms: Object.fromEntries(platforms.map((p) => [p, 'pending'])),
-  }));
-  job.status = 'posting';
-
-  for (let i = 0; i < memes.length; i++) {
-    const meme = memes[i];
-    const shortSyncPlatforms = platforms.filter((p) => p !== 'tiktok');
-
-    if (shortSyncPlatforms.length > 0) {
-      job.step = `Posting video ${i + 1}/${memes.length} to ${shortSyncPlatforms.join(', ')}...`;
-      log.info('create', `[${job.id}] posting video ${i + 1} via ShortSync to: ${shortSyncPlatforms.join(', ')}`);
-
-      try {
-        const byPlatform = await postToAllPlatforms(
-          meme.url,
-          { hookTagline: meme.tagline, description, hashtags },
-          shortSyncPlatforms
-        );
-        for (const platform of shortSyncPlatforms) {
-          const result = byPlatform[platform];
-          job.videos[i].platforms[platform] = result?.status === 'done' ? 'done' : `error: ${result?.error || 'unknown error'}`;
-          job.completedSteps += 1;
-        }
-      } catch (err) {
-        log.error('create', `[${job.id}] ShortSync post failed for video ${i + 1}:`, err.message);
-        for (const platform of shortSyncPlatforms) {
-          job.videos[i].platforms[platform] = `error: ${err.message}`;
-          job.completedSteps += 1;
-        }
-      }
-    }
-
-    // TikTok posts directly via TikTok's own Content Posting API (not
-    // through ShortSync, which wasn't posting TikTok reliably). Lands as a
-    // draft in your TikTok inbox until the app is audited for direct publish.
-    if (platforms.includes('tiktok')) {
-      job.step = `Posting video ${i + 1}/${memes.length} to tiktok...`;
-      log.info('create', `[${job.id}] attempting tiktok for video ${i + 1}...`);
-      try {
-        const baseCaption = [meme.tagline, description, hashtags].filter(Boolean).join('\n\n');
-        const result = await postToTikTok(meme.url, baseCaption);
-        job.videos[i].platforms.tiktok = 'done';
-        log.info('create', `[${job.id}] tiktok publish_id: ${result.publishId}`);
-      } catch (err) {
-        log.error('create', `[${job.id}] tiktok failed:`, err.message);
-        job.videos[i].platforms.tiktok = `error: ${err.message}`;
-      }
-      job.completedSteps += 1;
-    }
+  let params;
+  try {
+    params = validatedCreateParams({ prompt: picked.tagline });
+  } catch (err) {
+    return res.status(err.status || 500).json({ error: err.message });
   }
 
-  job.status = 'done';
-  job.step = 'All done!';
-  log.info('create', `[${job.id}] job complete`);
-}
+  const job = newJob('manual');
+  res.json({ jobId: job.id, picked: { topic: picked.topic, tagline: picked.tagline } });
+
+  markPromptUsed(picked.id).catch((err) => log.warn('auto-pick', `Could not mark prompt used: ${err.message}`));
+
+  runVideoJob(job, params).catch((err) => {
+    job.status = 'error';
+    job.error = err.message;
+    log.error('auto-pick', `Job ${job.id} failed fatally:`, err.message);
+  });
+});
 
 app.get('/status/:jobId', (req, res) => {
-  const job = jobs[req.params.jobId];
+  const job = getJob(req.params.jobId);
   if (!job) return res.status(404).json({ error: 'Unknown job — server may have restarted, or the job expired after 2 hours' });
   res.json(job);
 });
@@ -202,6 +151,56 @@ app.get('/prompts', async (req, res) => {
     res.json({ prompts });
   } catch (err) {
     log.error('prompts', 'Failed to load stored prompts:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Hit by an external scheduler (e.g. cron-job.org) every few minutes. Cheap
+// no-op most of the time — only does real work at a day boundary or when a
+// scheduled post's time has arrived. Also keeps the Render free instance
+// awake, which autonomous posting requires.
+app.get('/cron/tick', async (req, res) => {
+  if (!requireSecret(req, res)) return;
+  try {
+    const result = await tick();
+    res.json(result);
+  } catch (err) {
+    log.error('cron', 'Tick failed:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/autopilot/status', async (req, res) => {
+  if (!requireSecret(req, res)) return;
+  try {
+    const [enabled, state, learnings] = await Promise.all([
+      getAutopilotEnabled(),
+      getAutopilotState(),
+      getAutopilotLearnings(),
+    ]);
+    const remaining = state?.scheduledPosts?.filter((p) => !p.executed) || [];
+    const nextPost = remaining.length > 0 ? remaining.reduce((a, b) => (a.time < b.time ? a : b)) : null;
+    res.json({
+      enabled,
+      date: state?.date || null,
+      totalScheduledToday: state?.scheduledPosts?.length || 0,
+      postedToday: (state?.scheduledPosts?.length || 0) - remaining.length,
+      nextPostTime: nextPost?.time || null,
+      nextPostTopic: nextPost?.topic || null,
+      learnings,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/autopilot/toggle', async (req, res) => {
+  if (!requireSecret(req, res)) return;
+  try {
+    await setAutopilotEnabled(!!req.body.enabled);
+    log.info('autopilot', `Autopilot ${req.body.enabled ? 'ENABLED' : 'disabled'} via frontend toggle`);
+    res.json({ enabled: !!req.body.enabled });
+  } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
