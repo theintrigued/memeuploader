@@ -92,7 +92,7 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, OutlineColour, BackColour, Bold, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV
-Style: Caption,${fontFamily},${fontSize},&H00FFFFFF,&H00000000,&H99000000,1,3,4,0,8,${marginPx},${marginPx},20
+Style: Caption,${fontFamily},${fontSize},&H00FFFFFF,&H00000000,&H80000000,1,1,5,2,8,${marginPx},${marginPx},20
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
