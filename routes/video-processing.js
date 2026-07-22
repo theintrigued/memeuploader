@@ -43,22 +43,6 @@ function sanitizeText(text) {
     .trim();
 }
 
-function wrapText(text, maxCharsPerLine) {
-  const words = sanitizeText(text).split(' ');
-  const lines = [];
-  let current = '';
-  for (const word of words) {
-    if ((current + ' ' + word).trim().length > maxCharsPerLine) {
-      if (current) lines.push(current.trim());
-      current = word;
-    } else {
-      current = (current + ' ' + word).trim();
-    }
-  }
-  if (current) lines.push(current.trim());
-  return lines.join('\\N');
-}
-
 function formatAssTime(seconds) {
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);
@@ -70,25 +54,25 @@ function formatAssTime(seconds) {
 
 // Builds a minimal .ass file with ONE static text block, positioned with an
 // explicit {\pos(x,y)} override so it lands at an exact pixel spot regardless
-// of style alignment/margins. No animation, no timing splits.
+// of style alignment/margins.
 // widthPct: how much of the canvas width the text is allowed to use (higher
-// = less left/right padding, longer lines before wrapping). 0-100.
+// = less left/right padding). Wrapping is left to libass itself (WrapStyle 0)
+// using the font's REAL glyph widths — we don't guess character widths
+// ourselves, which was under-filling the available width badly at large
+// font sizes.
 function buildAssFile({ text, fontFamily, fontSize, xPct, yPct, widthPct, durationS }) {
   const x = Math.round((xPct / 100) * OUT_W);
   const y = Math.round((yPct / 100) * OUT_H);
   const marginPct = Math.max(0, (100 - widthPct) / 2);
   const marginPx = Math.round((marginPct / 100) * OUT_W);
-  // Rough chars-per-line estimate: wider allowed width and/or smaller font
-  // both fit more characters before wrapping.
-  const usableWidthPx = OUT_W * (widthPct / 100);
-  const maxCharsPerLine = Math.max(6, Math.round(usableWidthPx / (fontSize * 0.56)));
-  const lines = wrapText(text, maxCharsPerLine);
+  const cleanText = sanitizeText(text);
 
   const header = `[Script Info]
 ScriptType: v4.00+
 PlayResX: ${OUT_W}
 PlayResY: ${OUT_H}
 ScaledBorderAndShadow: yes
+WrapStyle: 0
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, OutlineColour, BackColour, Bold, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV
@@ -97,7 +81,7 @@ Style: Caption,${fontFamily},${fontSize},&H00FFFFFF,&H00000000,&H80000000,1,1,5,
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 `;
-  const event = `Dialogue: 0,0:00:00.00,${formatAssTime(durationS)},Caption,,0,0,0,,{\\pos(${x},${y})}${lines}\n`;
+  const event = `Dialogue: 0,0:00:00.00,${formatAssTime(durationS)},Caption,,0,0,0,,{\\pos(${x},${y})}${cleanText}\n`;
   return header + event;
 }
 
