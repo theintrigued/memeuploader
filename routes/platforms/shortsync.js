@@ -33,9 +33,12 @@ function findConnectionId(connections, platform) {
 // call. Replaces separate YouTube/TikTok/Instagram integrations — one service,
 // one upload, consistent error handling and analytics across all three.
 //
+// videoSource: either a URL string (downloaded here) or { localPath } (read
+// from disk directly — used when we've already processed the video locally,
+// e.g. after burning in text, so we don't re-download it).
 // captionParts: { hookTagline, description, hashtags } — hashtags go in
 // first_comment (not the caption body) so the visible caption stays clean.
-async function postToAllPlatforms(videoUrl, captionParts, platforms) {
+async function postToAllPlatforms(videoSource, captionParts, platforms) {
   const { hookTagline, description, hashtags } = captionParts;
   const caption = [hookTagline, description, hashtags].filter(Boolean).join('\n\n');
 
@@ -43,14 +46,19 @@ async function postToAllPlatforms(videoUrl, captionParts, platforms) {
   const uploadRes = await axios.post(`${BASE}/uploads`, {}, { headers: headers(), timeout: 20000 });
   const { upload_id, presigned_url, required_headers } = uploadRes.data;
 
-  // 2. Download the source video, then PUT it — buffered (not streamed) because
-  // presigned upload URLs generally require a known Content-Length.
+  // 2. Get the video bytes — either from disk (already processed locally) or
+  // by downloading a remote URL — then PUT buffered, since presigned upload
+  // URLs generally require a known Content-Length (chunked bodies get rejected).
   let videoBuffer;
   try {
-    const videoRes = await axios.get(videoUrl, { responseType: 'arraybuffer', timeout: 60000 });
-    videoBuffer = Buffer.from(videoRes.data);
+    if (typeof videoSource === 'string') {
+      const videoRes = await axios.get(videoSource, { responseType: 'arraybuffer', timeout: 60000 });
+      videoBuffer = Buffer.from(videoRes.data);
+    } else {
+      videoBuffer = require('fs').readFileSync(videoSource.localPath);
+    }
   } catch (err) {
-    throw new Error(`Could not download source video for ShortSync upload: ${err.message}`);
+    throw new Error(`Could not read source video for ShortSync upload: ${err.message}`);
   }
 
   try {

@@ -9,6 +9,9 @@ const { getPromptsList, addPrompts, markPromptUsed, pickOldestUnused } = require
 const { newJob, getJob } = require('./routes/job-store');
 const { runVideoJob } = require('./routes/generate-and-post');
 const { tick } = require('./routes/autopilot');
+const { indexNextBatch } = require('./routes/template-indexer');
+const { getManifest, getCompactList } = require('./routes/template-store');
+const { FONTS } = require('./routes/video-processing');
 const { getState: getAutopilotState, getEnabled: getAutopilotEnabled, setEnabled: setAutopilotEnabled, getLearnings: getAutopilotLearnings } = require('./routes/autopilot-store');
 
 // Crash guards: log and keep running instead of the process dying silently
@@ -56,7 +59,21 @@ function validatedCreateParams(body) {
     throw { status: 500, message: `Server is misconfigured — missing env vars: ${missing.join(', ')}` };
   }
 
-  return { prompt, description, hashtags, mediaType, count, platforms };
+  const useTemplateIndex = !!body.useTemplateIndex;
+  let textOptions = {};
+  if (useTemplateIndex) {
+    const rawOpts = body.textOptions || {};
+    const font = Object.keys(FONTS).includes(rawOpts.font) ? rawOpts.font : 'anton';
+    let fontSize = parseInt(rawOpts.fontSize, 10);
+    if (!Number.isInteger(fontSize) || fontSize < 20 || fontSize > 160) fontSize = 64;
+    let x = parseFloat(rawOpts.x);
+    if (!Number.isFinite(x) || x < 0 || x > 100) x = 50;
+    let y = parseFloat(rawOpts.y);
+    if (!Number.isFinite(y) || y < 0 || y > 100) y = 8;
+    textOptions = { font, fontSize, x, y };
+  }
+
+  return { prompt, description, hashtags, mediaType, count, platforms, useTemplateIndex, textOptions };
 }
 
 app.post('/create', (req, res) => {
@@ -161,11 +178,35 @@ app.get('/prompts', async (req, res) => {
 // awake, which autonomous posting requires.
 app.get('/cron/tick', async (req, res) => {
   if (!requireSecret(req, res)) return;
+  const result = { autopilot: null, templateIndexing: null };
   try {
-    const result = await tick();
-    res.json(result);
+    result.autopilot = await tick();
   } catch (err) {
-    log.error('cron', 'Tick failed:', err.message);
+    log.error('cron', 'Autopilot tick failed:', err.message);
+    result.autopilot = { error: err.message };
+  }
+  // Runs regardless of autopilot on/off — building the template library is a
+  // background task independent of whether we're actively posting.
+  try {
+    result.templateIndexing = await indexNextBatch();
+  } catch (err) {
+    log.warn('cron', 'Template indexing batch failed:', err.message);
+    result.templateIndexing = { error: err.message };
+  }
+  res.json(result);
+});
+
+app.get('/admin/template-index-status', async (req, res) => {
+  if (!requireSecret(req, res)) return;
+  try {
+    const [manifest, compactList] = await Promise.all([getManifest(), getCompactList()]);
+    res.json({
+      indexedCount: manifest.indexedCount,
+      discoveryDone: manifest.done,
+      withDescriptions: compactList.length,
+      lastRunAt: manifest.lastRunAt,
+    });
+  } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
@@ -203,6 +244,10 @@ app.post('/autopilot/toggle', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+app.get('/fonts', (req, res) => {
+  res.json({ fonts: Object.entries(FONTS).map(([key, v]) => ({ key, label: v.label })) });
 });
 
 // Diagnostic endpoint — shows which env vars are present WITHOUT leaking values.

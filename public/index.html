@@ -170,6 +170,32 @@
     <textarea id="prompt" rows="3" placeholder="e.g. streamer rage quits after losing to a bot" style="margin-bottom:0;"></textarea>
   </div>
 
+  <div class="card">
+    <div class="switch-row">
+      <div>
+        <div style="font-weight:700; font-size:14px;">🎯 Match to existing template</div>
+        <div class="autopilot-stat">Skips Insider Memes credits — picks from our own indexed library and adds text ourselves</div>
+      </div>
+      <label class="switch">
+        <input type="checkbox" id="templateMatchToggle" onchange="onTemplateMatchToggle()" />
+        <span class="switch-track"></span>
+      </label>
+    </div>
+    <div id="templateMatchOptions" style="display:none; margin-top:14px;">
+      <label for="fontSelect">Font</label>
+      <select id="fontSelect"><option value="anton">Anton (Impact-style)</option></select>
+
+      <label for="fontSizeInput">Font size (px)</label>
+      <input id="fontSizeInput" type="number" min="20" max="160" value="64" />
+
+      <label for="xPosInput">Horizontal position (0 = left, 50 = center, 100 = right)</label>
+      <input id="xPosInput" type="number" min="0" max="100" value="50" />
+
+      <label for="yPosInput">Vertical position (0 = top, 50 = middle, 100 = bottom)</label>
+      <input id="yPosInput" type="number" min="0" max="100" value="8" style="margin-bottom:0;" />
+    </div>
+  </div>
+
   <details>
     <summary>Advanced options</summary>
     <div class="card">
@@ -283,6 +309,22 @@
     // switch reflects reality even if you toggled it from another device.
     setInterval(() => { if (document.getElementById('secret').value) loadAutopilotStatus(); }, 30000);
 
+    async function onTemplateMatchToggle() {
+      const on = document.getElementById('templateMatchToggle').checked;
+      document.getElementById('templateMatchOptions').style.display = on ? 'block' : 'none';
+      if (on && !window._fontsLoaded) {
+        try {
+          const res = await fetch('/fonts');
+          const data = await res.json();
+          const select = document.getElementById('fontSelect');
+          select.innerHTML = data.fonts.map((f) => `<option value="${f.key}">${escapeHtml(f.label)}</option>`).join('');
+          window._fontsLoaded = true;
+        } catch (e) {
+          // keep the default single option if this fails, not worth blocking on
+        }
+      }
+    }
+
     function renderChips(list) {
       window._trending = list;
       const el = document.getElementById('trendingList');
@@ -367,6 +409,13 @@
       const description = document.getElementById('description').value;
       const hashtags = document.getElementById('hashtags').value;
       const promptId = window._selectedPromptId || null;
+      const useTemplateIndex = document.getElementById('templateMatchToggle').checked;
+      const textOptions = useTemplateIndex ? {
+        font: document.getElementById('fontSelect').value,
+        fontSize: document.getElementById('fontSizeInput').value,
+        x: document.getElementById('xPosInput').value,
+        y: document.getElementById('yPosInput').value,
+      } : undefined;
 
       if (!prompt.trim()) {
         alert('Enter a prompt first.');
@@ -384,7 +433,7 @@
         const res = await fetch('/create', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ secret, prompt, mediaType, count, description, hashtags, promptId }),
+          body: JSON.stringify({ secret, prompt, mediaType, count, description, hashtags, promptId, useTemplateIndex, textOptions }),
         });
         const data = await res.json();
         if (!res.ok) {

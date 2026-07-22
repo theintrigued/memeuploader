@@ -46,13 +46,17 @@ async function getFreshAccessToken() {
 // videos are hosted on Insider Memes' domain.
 const MAX_UPLOAD_BYTES = 100 * 1024 * 1024; // 100MB safety cap
 
-async function postToTikTok(videoUrl, caption) {
+async function postToTikTok(videoSource, caption) {
   const token = await getFreshAccessToken();
 
   let videoBuffer;
   try {
-    const videoRes = await axios.get(videoUrl, { responseType: 'arraybuffer', timeout: 60000, maxContentLength: MAX_UPLOAD_BYTES });
-    videoBuffer = Buffer.from(videoRes.data);
+    if (typeof videoSource === 'string') {
+      const videoRes = await axios.get(videoSource, { responseType: 'arraybuffer', timeout: 60000, maxContentLength: MAX_UPLOAD_BYTES });
+      videoBuffer = Buffer.from(videoRes.data);
+    } else {
+      videoBuffer = require('fs').readFileSync(videoSource.localPath);
+    }
   } catch (err) {
     throw new Error(`Could not download source video for TikTok upload: ${err.message}`);
   }
