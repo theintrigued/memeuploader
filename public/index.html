@@ -251,29 +251,31 @@
       <input id="videoHeightInput" type="number" min="10" max="100" value="72" onchange="saveTemplateMatchDefaults()" />
 
       <label for="videoAnchorSelect">Video position</label>
-      <select id="videoAnchorSelect" onchange="saveTemplateMatchDefaults()" style="margin-bottom:0;">
+      <select id="videoAnchorSelect" onchange="saveTemplateMatchDefaults()" style="margin-bottom:12px;">
         <option value="bottom" selected>Bottom (text bar at top)</option>
         <option value="top">Top (text bar at bottom)</option>
         <option value="center">Center (text bar split top+bottom)</option>
       </select>
+      <button class="btn-secondary" type="button" onclick="saveTemplateMatchDefaults()" style="font-size:13px; margin-bottom:0;">💾 Save settings</button>
     </div>
 
     <div class="card">
-      <div class="section-label" style="margin-bottom:12px;">Text style (auto-saves — autopilot uses these too)</div>
+      <div class="section-label" style="margin-bottom:12px;">Text style (autopilot uses these too)</div>
       <label for="fontSelect">Font</label>
       <select id="fontSelect" onchange="saveTemplateMatchDefaults()"><option value="anton">Anton (Impact-style)</option></select>
 
       <label for="fontSizeInput">Font size (px)</label>
       <input id="fontSizeInput" type="number" min="20" max="160" value="74" onchange="saveTemplateMatchDefaults()" />
 
-      <label for="widthInput">Text width (higher = less left/right padding)</label>
-      <input id="widthInput" type="number" min="10" max="100" value="92" onchange="saveTemplateMatchDefaults()" />
+      <label for="widthInput">Text width (higher = less left/right padding, 100 = edge to edge)</label>
+      <input id="widthInput" type="number" min="10" max="100" value="96" onchange="saveTemplateMatchDefaults()" />
 
       <label for="xPosInput">Horizontal position (0 = left, 50 = center, 100 = right)</label>
       <input id="xPosInput" type="number" min="0" max="100" value="50" onchange="saveTemplateMatchDefaults()" />
 
       <label for="yPosInput">Vertical position (0 = top of canvas, 100 = bottom) — aim within the freed bar</label>
-      <input id="yPosInput" type="number" min="0" max="100" value="12" style="margin-bottom:0;" onchange="saveTemplateMatchDefaults()" />
+      <input id="yPosInput" type="number" min="0" max="100" value="12" onchange="saveTemplateMatchDefaults()" />
+      <button class="btn-secondary" type="button" onclick="saveTemplateMatchDefaults()" style="font-size:13px; margin-bottom:0;">💾 Save settings</button>
       <div class="autopilot-stat" id="templateMatchSaveStatus" style="margin-top:6px;"></div>
     </div>
   </div>

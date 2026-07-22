@@ -47,16 +47,18 @@ function requireSecret(req, res) {
 
 function resolveTextOptions(rawOpts, saved) {
   const font = Object.keys(FONTS).includes(rawOpts.font) ? rawOpts.font : (saved?.font || 'poppins');
-  let fontSize = parseInt(rawOpts.fontSize, 10);
-  if (!Number.isInteger(fontSize) || fontSize < 20 || fontSize > 160) fontSize = saved?.fontSize ?? 74;
-  let x = parseFloat(rawOpts.x);
-  if (!Number.isFinite(x) || x < 0 || x > 100) x = saved?.x ?? 50;
-  let y = parseFloat(rawOpts.y);
-  if (!Number.isFinite(y) || y < 0 || y > 100) y = saved?.y ?? 12;
-  let width = parseFloat(rawOpts.width);
-  if (!Number.isFinite(width) || width < 10 || width > 100) width = saved?.width ?? 92;
-  let videoHeight = parseFloat(rawOpts.videoHeight);
-  if (!Number.isFinite(videoHeight) || videoHeight < 10 || videoHeight > 100) videoHeight = saved?.videoHeight ?? 72;
+
+  const clampOr = (raw, min, max, fallback) => {
+    const n = parseFloat(raw);
+    if (!Number.isFinite(n)) return fallback;
+    return Math.min(max, Math.max(min, n));
+  };
+
+  const fontSize = Math.round(clampOr(rawOpts.fontSize, 20, 160, saved?.fontSize ?? 74));
+  const x = clampOr(rawOpts.x, 0, 100, saved?.x ?? 50);
+  const y = clampOr(rawOpts.y, 0, 100, saved?.y ?? 12);
+  const width = clampOr(rawOpts.width, 10, 100, saved?.width ?? 96);
+  const videoHeight = clampOr(rawOpts.videoHeight, 10, 100, saved?.videoHeight ?? 72);
   const videoAnchor = ['top', 'center', 'bottom'].includes(rawOpts.videoAnchor) ? rawOpts.videoAnchor : (saved?.videoAnchor || 'bottom');
   return { font, fontSize, x, y, width, videoHeight, videoAnchor };
 }
@@ -328,18 +330,23 @@ app.get('/settings/template-match', async (req, res) => {
 app.post('/settings/template-match', async (req, res) => {
   if (!requireSecret(req, res)) return;
   try {
+    const clamp = (raw, min, max) => {
+      const n = parseFloat(raw);
+      if (!Number.isFinite(n)) return null;
+      return Math.min(max, Math.max(min, n));
+    };
     const partial = {};
     if (Object.keys(FONTS).includes(req.body.font)) partial.font = req.body.font;
-    const fontSize = parseInt(req.body.fontSize, 10);
-    if (Number.isInteger(fontSize) && fontSize >= 20 && fontSize <= 160) partial.fontSize = fontSize;
-    const x = parseFloat(req.body.x);
-    if (Number.isFinite(x) && x >= 0 && x <= 100) partial.x = x;
-    const y = parseFloat(req.body.y);
-    if (Number.isFinite(y) && y >= 0 && y <= 100) partial.y = y;
-    const width = parseFloat(req.body.width);
-    if (Number.isFinite(width) && width >= 10 && width <= 100) partial.width = width;
-    const videoHeight = parseFloat(req.body.videoHeight);
-    if (Number.isFinite(videoHeight) && videoHeight >= 10 && videoHeight <= 100) partial.videoHeight = videoHeight;
+    const fontSize = clamp(req.body.fontSize, 20, 160);
+    if (fontSize !== null) partial.fontSize = Math.round(fontSize);
+    const x = clamp(req.body.x, 0, 100);
+    if (x !== null) partial.x = x;
+    const y = clamp(req.body.y, 0, 100);
+    if (y !== null) partial.y = y;
+    const width = clamp(req.body.width, 10, 100);
+    if (width !== null) partial.width = width;
+    const videoHeight = clamp(req.body.videoHeight, 10, 100);
+    if (videoHeight !== null) partial.videoHeight = videoHeight;
     if (['top', 'center', 'bottom'].includes(req.body.videoAnchor)) partial.videoAnchor = req.body.videoAnchor;
     const saved = await setTemplateMatchDefaults(partial);
     res.json(saved);
