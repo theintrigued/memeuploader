@@ -24,6 +24,7 @@ process.on('uncaughtException', (err) => log.error('process', 'Uncaught exceptio
 const app = express();
 app.use(express.json({ limit: '1mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
+app.use('/assets/fonts', express.static(path.join(__dirname, 'assets', 'fonts')));
 app.use(require('./routes/tiktok-oauth'));
 
 const MAX_PROMPT_LEN = 500;
@@ -349,7 +350,14 @@ app.post('/settings/template-match', async (req, res) => {
 });
 
 app.get('/fonts', (req, res) => {
-  res.json({ fonts: Object.entries(FONTS).map(([key, v]) => ({ key, label: v.label })) });
+  res.json({
+    fonts: Object.entries(FONTS).map(([key, v]) => ({
+      key,
+      label: v.label,
+      family: v.family,
+      url: `/assets/fonts/${v.file}`,
+    })),
+  });
 });
 
 // Diagnostic endpoint — shows which env vars are present WITHOUT leaking values.

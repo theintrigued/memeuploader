@@ -231,27 +231,35 @@
         </label>
       </div>
       <div id="customCaptionBox" style="display:none; margin-top:12px;">
-        <textarea id="customCaptionInput" rows="2" placeholder="e.g. POV: the GPS says 4 more minutes for 20 minutes" maxlength="120" style="margin-bottom:0;"></textarea>
+        <textarea id="customCaptionInput" rows="2" placeholder="e.g. POV: the GPS says 4 more minutes for 20 minutes" maxlength="120" style="margin-bottom:0;" oninput="updatePreview()"></textarea>
         <div class="autopilot-stat">Same caption used on every video generated this batch</div>
       </div>
     </div>
 
     <div class="card">
+      <div class="section-label" style="margin-bottom:10px;">Preview</div>
+      <div id="previewBox" style="position:relative; width:100%; aspect-ratio:9/16; background:linear-gradient(160deg,#2a2a35,#141419); border-radius:10px; overflow:hidden;">
+        <div id="previewText" style="position:absolute; color:white; font-weight:700; text-align:center; white-space:pre-wrap; line-height:1.25;"></div>
+      </div>
+      <div class="autopilot-stat" style="margin-top:6px;">Approximate — actual rendering may differ slightly by a few pixels.</div>
+    </div>
+
+    <div class="card">
       <div class="section-label" style="margin-bottom:12px;">Text style (auto-saves — autopilot uses these too)</div>
       <label for="fontSelect">Font</label>
-      <select id="fontSelect" onchange="saveTemplateMatchDefaults()"><option value="anton">Anton (Impact-style)</option></select>
+      <select id="fontSelect" onchange="saveTemplateMatchDefaults(); updatePreview();"><option value="anton">Anton (Impact-style)</option></select>
 
       <label for="fontSizeInput">Font size (px)</label>
-      <input id="fontSizeInput" type="number" min="20" max="160" value="58" onchange="saveTemplateMatchDefaults()" />
+      <input id="fontSizeInput" type="number" min="20" max="160" value="74" oninput="updatePreview()" onchange="saveTemplateMatchDefaults()" />
 
       <label for="widthInput">Text width (higher = less left/right padding)</label>
-      <input id="widthInput" type="number" min="10" max="100" value="82" onchange="saveTemplateMatchDefaults()" />
+      <input id="widthInput" type="number" min="10" max="100" value="92" oninput="updatePreview()" onchange="saveTemplateMatchDefaults()" />
 
       <label for="xPosInput">Horizontal position (0 = left, 50 = center, 100 = right)</label>
-      <input id="xPosInput" type="number" min="0" max="100" value="50" onchange="saveTemplateMatchDefaults()" />
+      <input id="xPosInput" type="number" min="0" max="100" value="50" oninput="updatePreview()" onchange="saveTemplateMatchDefaults()" />
 
       <label for="yPosInput">Vertical position (0 = top, 50 = middle, 100 = bottom)</label>
-      <input id="yPosInput" type="number" min="0" max="100" value="34" style="margin-bottom:0;" onchange="saveTemplateMatchDefaults()" />
+      <input id="yPosInput" type="number" min="0" max="100" value="30" style="margin-bottom:0;" oninput="updatePreview()" onchange="saveTemplateMatchDefaults()" />
       <div class="autopilot-stat" id="templateMatchSaveStatus" style="margin-top:6px;"></div>
     </div>
   </div>
@@ -382,10 +390,16 @@
         try {
           const res = await fetch('/fonts');
           const data = await res.json();
+          window._fontDefs = data.fonts;
           const select = document.getElementById('fontSelect');
           select.innerHTML = data.fonts.map((f) => `<option value="${f.key}">${escapeHtml(f.label)}</option>`).join('');
+          const styleEl = document.createElement('style');
+          styleEl.textContent = data.fonts.map((f) =>
+            `@font-face { font-family: 'preview-${f.key}'; src: url('${f.url}'); }`
+          ).join('\n');
+          document.head.appendChild(styleEl);
           window._fontsLoaded = true;
-        } catch (e) { /* keep default single option */ }
+        } catch (e) { /* keep default single option, preview falls back to system font */ }
       }
       const secret = document.getElementById('secret').value;
       if (secret) {
@@ -402,11 +416,52 @@
         } catch (e) { /* fall back to whatever's already in the fields */ }
       }
       refreshUnusedCount();
+      updatePreview();
     }
 
     function onCustomCaptionToggle() {
       document.getElementById('customCaptionBox').style.display =
         document.getElementById('customCaptionToggle').checked ? 'block' : 'none';
+      updatePreview();
+    }
+
+    const PREVIEW_CANVAS_W = 1080; // must match OUT_W in video-processing.js
+
+    function updatePreview() {
+      const box = document.getElementById('previewBox');
+      const textEl = document.getElementById('previewText');
+      if (!box || !textEl) return;
+
+      const fontKey = document.getElementById('fontSelect').value || 'anton';
+      const fontSize = parseFloat(document.getElementById('fontSizeInput').value) || 74;
+      const width = parseFloat(document.getElementById('widthInput').value) || 92;
+      const x = parseFloat(document.getElementById('xPosInput').value);
+      const y = parseFloat(document.getElementById('yPosInput').value);
+      const useCustom = document.getElementById('customCaptionToggle')?.checked;
+      const customText = document.getElementById('customCaptionInput')?.value.trim();
+      const sampleText = useCustom && customText ? customText : 'POV: the GPS says 4 more minutes for 20 minutes';
+
+      const boxWidthPx = box.getBoundingClientRect().width || 300;
+      const scale = boxWidthPx / PREVIEW_CANVAS_W;
+
+      textEl.textContent = sampleText;
+      textEl.style.fontFamily = `preview-${fontKey}, sans-serif`;
+      textEl.style.fontSize = (fontSize * scale) + 'px';
+      textEl.style.width = width + '%';
+      // Matches ffmpeg's {\pos(x,y)} with top-center alignment: the anchor
+      // point sits at (x%, y%) of the canvas, and the text block is centered
+      // horizontally around that point.
+      textEl.style.left = x + '%';
+      textEl.style.top = y + '%';
+      textEl.style.transform = 'translateX(-50%)';
+      textEl.style.marginLeft = '0';
+      // Approximate the outline+shadow burn-in style (no box background)
+      const strokePx = Math.max(1, Math.round(fontSize * scale * 0.06));
+      textEl.style.textShadow = [
+        `-${strokePx}px -${strokePx}px 0 #000`, `${strokePx}px -${strokePx}px 0 #000`,
+        `-${strokePx}px ${strokePx}px 0 #000`, `${strokePx}px ${strokePx}px 0 #000`,
+        `2px 4px 6px rgba(0,0,0,0.7)`,
+      ].join(', ');
     }
 
     async function saveTemplateMatchDefaults() {
