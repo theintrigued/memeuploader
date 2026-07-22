@@ -31,4 +31,11 @@ async function setTemplateDetail(id, record) {
   await setJSON(DETAIL_PREFIX + id, record);
 }
 
-module.exports = { getManifest, setManifest, getCompactList, appendToCompactList, getTemplateDetail, setTemplateDetail };
+async function getRandomVideoTemplate() {
+  const list = await getCompactList();
+  const videos = list.filter((t) => t.type === 'video' && t.mediaUrl);
+  if (videos.length === 0) return null;
+  return videos[Math.floor(Math.random() * videos.length)];
+}
+
+module.exports = { getManifest, setManifest, getCompactList, appendToCompactList, getTemplateDetail, setTemplateDetail, getRandomVideoTemplate };

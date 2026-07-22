@@ -169,8 +169,8 @@ async function burnTextOverlay(inputPath, {
   else yOffset = OUT_H - videoHeightPx; // bottom (default) — frees a bar at the top for the caption
 
   const vf = [
-    `scale=${OUT_W}:${videoHeightPx}:force_original_aspect_ratio=decrease`,
-    `pad=${OUT_W}:${videoHeightPx}:(ow-iw)/2:(oh-ih)/2:color=black`,
+    `scale=${OUT_W}:${videoHeightPx}:force_original_aspect_ratio=increase`,
+    `crop=${OUT_W}:${videoHeightPx}`,
     `pad=${OUT_W}:${OUT_H}:0:${yOffset}:color=black`,
     `subtitles='${assPathEscaped}':fontsdir='${fontsDirEscaped}'`,
   ].join(',');

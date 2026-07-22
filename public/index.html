@@ -231,27 +231,27 @@
         </label>
       </div>
       <div id="customCaptionBox" style="display:none; margin-top:12px;">
-        <textarea id="customCaptionInput" rows="2" placeholder="e.g. POV: the GPS says 4 more minutes for 20 minutes" maxlength="120" style="margin-bottom:0;" oninput="updatePreview()"></textarea>
+        <textarea id="customCaptionInput" rows="2" placeholder="e.g. POV: the GPS says 4 more minutes for 20 minutes" maxlength="120" style="margin-bottom:0;"></textarea>
         <div class="autopilot-stat">Same caption used on every video generated this batch</div>
       </div>
     </div>
 
     <div class="card">
       <div class="section-label" style="margin-bottom:10px;">Preview</div>
-      <div id="previewBox" style="position:relative; width:100%; aspect-ratio:9/16; background:#0b0b0f; border-radius:10px; overflow:hidden;">
-        <div id="previewVideo" style="position:absolute; left:0; width:100%; background:linear-gradient(160deg,#3a3a48,#1c1c22); display:flex; align-items:center; justify-content:center; color:var(--muted); font-size:11px;">video</div>
-        <div id="previewText" style="position:absolute; color:white; font-weight:700; text-align:center; white-space:pre-wrap; line-height:1.25;"></div>
+      <div id="previewVideoWrap" style="display:none; margin-bottom:10px;">
+        <video id="previewVideoPlayer" controls playsinline style="width:100%; border-radius:10px; background:#000;"></video>
       </div>
-      <div class="autopilot-stat" style="margin-top:6px;">Approximate — actual rendering may differ slightly by a few pixels.</div>
+      <button class="btn-secondary" id="previewRenderBtn" type="button" onclick="renderPreview()" style="font-size:13px; margin-bottom:0;">🎬 Render real preview (uses current settings)</button>
+      <div class="autopilot-stat" id="previewStatus" style="margin-top:6px;">Actual ffmpeg render on a real random template — takes a few seconds, no Insider Memes credits used.</div>
     </div>
 
     <div class="card">
       <div class="section-label" style="margin-bottom:12px;">Video size (auto-saves — autopilot uses these too)</div>
       <label for="videoHeightInput">Video height (lower = smaller video, more room for text)</label>
-      <input id="videoHeightInput" type="number" min="10" max="100" value="72" oninput="updatePreview()" onchange="saveTemplateMatchDefaults()" />
+      <input id="videoHeightInput" type="number" min="10" max="100" value="72" onchange="saveTemplateMatchDefaults()" />
 
       <label for="videoAnchorSelect">Video position</label>
-      <select id="videoAnchorSelect" onchange="saveTemplateMatchDefaults(); updatePreview();" style="margin-bottom:0;">
+      <select id="videoAnchorSelect" onchange="saveTemplateMatchDefaults()" style="margin-bottom:0;">
         <option value="bottom" selected>Bottom (text bar at top)</option>
         <option value="top">Top (text bar at bottom)</option>
         <option value="center">Center (text bar split top+bottom)</option>
@@ -261,19 +261,19 @@
     <div class="card">
       <div class="section-label" style="margin-bottom:12px;">Text style (auto-saves — autopilot uses these too)</div>
       <label for="fontSelect">Font</label>
-      <select id="fontSelect" onchange="saveTemplateMatchDefaults(); updatePreview();"><option value="anton">Anton (Impact-style)</option></select>
+      <select id="fontSelect" onchange="saveTemplateMatchDefaults()"><option value="anton">Anton (Impact-style)</option></select>
 
       <label for="fontSizeInput">Font size (px)</label>
-      <input id="fontSizeInput" type="number" min="20" max="160" value="74" oninput="updatePreview()" onchange="saveTemplateMatchDefaults()" />
+      <input id="fontSizeInput" type="number" min="20" max="160" value="74" onchange="saveTemplateMatchDefaults()" />
 
       <label for="widthInput">Text width (higher = less left/right padding)</label>
-      <input id="widthInput" type="number" min="10" max="100" value="92" oninput="updatePreview()" onchange="saveTemplateMatchDefaults()" />
+      <input id="widthInput" type="number" min="10" max="100" value="92" onchange="saveTemplateMatchDefaults()" />
 
       <label for="xPosInput">Horizontal position (0 = left, 50 = center, 100 = right)</label>
-      <input id="xPosInput" type="number" min="0" max="100" value="50" oninput="updatePreview()" onchange="saveTemplateMatchDefaults()" />
+      <input id="xPosInput" type="number" min="0" max="100" value="50" onchange="saveTemplateMatchDefaults()" />
 
       <label for="yPosInput">Vertical position (0 = top of canvas, 100 = bottom) — aim within the freed bar</label>
-      <input id="yPosInput" type="number" min="0" max="100" value="12" style="margin-bottom:0;" oninput="updatePreview()" onchange="saveTemplateMatchDefaults()" />
+      <input id="yPosInput" type="number" min="0" max="100" value="12" style="margin-bottom:0;" onchange="saveTemplateMatchDefaults()" />
       <div class="autopilot-stat" id="templateMatchSaveStatus" style="margin-top:6px;"></div>
     </div>
   </div>
@@ -404,16 +404,10 @@
         try {
           const res = await fetch('/fonts');
           const data = await res.json();
-          window._fontDefs = data.fonts;
           const select = document.getElementById('fontSelect');
           select.innerHTML = data.fonts.map((f) => `<option value="${f.key}">${escapeHtml(f.label)}</option>`).join('');
-          const styleEl = document.createElement('style');
-          styleEl.textContent = data.fonts.map((f) =>
-            `@font-face { font-family: 'preview-${f.key}'; src: url('${f.url}'); }`
-          ).join('\n');
-          document.head.appendChild(styleEl);
           window._fontsLoaded = true;
-        } catch (e) { /* keep default single option, preview falls back to system font */ }
+        } catch (e) { /* keep default single option */ }
       }
       const secret = document.getElementById('secret').value;
       if (secret) {
@@ -432,63 +426,58 @@
         } catch (e) { /* fall back to whatever's already in the fields */ }
       }
       refreshUnusedCount();
-      updatePreview();
     }
 
     function onCustomCaptionToggle() {
       document.getElementById('customCaptionBox').style.display =
         document.getElementById('customCaptionToggle').checked ? 'block' : 'none';
-      updatePreview();
     }
 
-    const PREVIEW_CANVAS_W = 1080; // must match OUT_W in video-processing.js
+    async function renderPreview() {
+      const btn = document.getElementById('previewRenderBtn');
+      const statusEl = document.getElementById('previewStatus');
+      const wrap = document.getElementById('previewVideoWrap');
+      const player = document.getElementById('previewVideoPlayer');
+      const secret = document.getElementById('secret').value;
+      if (!secret) {
+        statusEl.textContent = 'Enter your app secret first.';
+        return;
+      }
 
-    function updatePreview() {
-      const box = document.getElementById('previewBox');
-      const videoEl = document.getElementById('previewVideo');
-      const textEl = document.getElementById('previewText');
-      if (!box || !textEl || !videoEl) return;
-
-      const fontKey = document.getElementById('fontSelect').value || 'anton';
-      const fontSize = parseFloat(document.getElementById('fontSizeInput').value) || 74;
-      const width = parseFloat(document.getElementById('widthInput').value) || 92;
-      const x = parseFloat(document.getElementById('xPosInput').value);
-      const y = parseFloat(document.getElementById('yPosInput').value);
-      const videoHeight = Math.min(100, Math.max(10, parseFloat(document.getElementById('videoHeightInput').value) || 72));
-      const videoAnchor = document.getElementById('videoAnchorSelect').value || 'bottom';
+      const textOptions = {
+        font: document.getElementById('fontSelect').value,
+        fontSize: document.getElementById('fontSizeInput').value,
+        width: document.getElementById('widthInput').value,
+        x: document.getElementById('xPosInput').value,
+        y: document.getElementById('yPosInput').value,
+        videoHeight: document.getElementById('videoHeightInput').value,
+        videoAnchor: document.getElementById('videoAnchorSelect').value,
+      };
       const useCustom = document.getElementById('customCaptionToggle')?.checked;
       const customText = document.getElementById('customCaptionInput')?.value.trim();
-      const sampleText = useCustom && customText ? customText : 'POV: the GPS says 4 more minutes for 20 minutes';
+      const text = useCustom && customText ? customText : undefined;
 
-      const boxWidthPx = box.getBoundingClientRect().width || 300;
-      const scale = boxWidthPx / PREVIEW_CANVAS_W;
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span>Rendering on a real template...';
+      statusEl.textContent = 'This runs the actual ffmpeg pipeline — usually 5-15 seconds.';
 
-      // Video region — mirrors the backend's scale/pad/anchor math exactly.
-      let videoTopPct = 0;
-      if (videoAnchor === 'top') videoTopPct = 0;
-      else if (videoAnchor === 'center') videoTopPct = (100 - videoHeight) / 2;
-      else videoTopPct = 100 - videoHeight; // bottom
-      videoEl.style.top = videoTopPct + '%';
-      videoEl.style.height = videoHeight + '%';
-
-      textEl.textContent = sampleText;
-      textEl.style.fontFamily = `preview-${fontKey}, sans-serif`;
-      textEl.style.fontSize = (fontSize * scale) + 'px';
-      textEl.style.width = width + '%';
-      // Matches ffmpeg's {\pos(x,y)} with top-center alignment: the anchor
-      // point sits at (x%, y%) of the canvas, and the text block is centered
-      // horizontally around that point.
-      textEl.style.left = x + '%';
-      textEl.style.top = y + '%';
-      textEl.style.transform = 'translateX(-50%)';
-      textEl.style.marginLeft = '0';
-      // Approximate the outline+shadow burn-in style (no box background)
-      const strokePx = Math.max(1, Math.round(fontSize * scale * 0.06));
-      textEl.style.textShadow = [
-        `-${strokePx}px -${strokePx}px 0 #000`, `${strokePx}px -${strokePx}px 0 #000`,
-        `-${strokePx}px ${strokePx}px 0 #000`, `${strokePx}px ${strokePx}px 0 #000`,
-        `2px 4px 6px rgba(0,0,0,0.7)`,
-      ].join(', ');
+      try {
+        const res = await fetch('/preview-render', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ secret, textOptions, text }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Preview render failed');
+        player.src = data.previewUrl;
+        wrap.style.display = 'block';
+        player.play().catch(() => {});
+        statusEl.textContent = 'Real render, actual template — this is exactly what posting will produce.';
+      } catch (e) {
+        statusEl.textContent = 'Failed: ' + e.message;
+      }
+      btn.disabled = false;
+      btn.textContent = '🎬 Render real preview (uses current settings)';
     }
 
     async function saveTemplateMatchDefaults() {

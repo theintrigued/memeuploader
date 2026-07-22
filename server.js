@@ -10,8 +10,8 @@ const { newJob, getJob } = require('./routes/job-store');
 const { runVideoJob } = require('./routes/generate-and-post');
 const { tick } = require('./routes/autopilot');
 const { indexNextBatch } = require('./routes/template-indexer');
-const { getManifest, getCompactList } = require('./routes/template-store');
-const { FONTS } = require('./routes/video-processing');
+const { getManifest, getCompactList, getRandomVideoTemplate } = require('./routes/template-store');
+const { FONTS, downloadToTemp, burnTextOverlay, cleanupFile, PROCESSED_DIR } = require('./routes/video-processing');
 const { getDefaults: getTemplateMatchDefaults, setDefaults: setTemplateMatchDefaults } = require('./routes/template-match-settings');
 const { getState: getAutopilotState, getEnabled: getAutopilotEnabled, setEnabled: setAutopilotEnabled, getLearnings: getAutopilotLearnings } = require('./routes/autopilot-store');
 
@@ -344,6 +344,40 @@ app.post('/settings/template-match', async (req, res) => {
     const saved = await setTemplateMatchDefaults(partial);
     res.json(saved);
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.use('/processed', express.static(PROCESSED_DIR));
+
+// Renders an actual short ffmpeg output using a random real indexed template
+// + your current text settings — an accurate preview of what will actually
+// get posted, not a CSS approximation. No Insider Memes credits used.
+app.post('/preview-render', async (req, res) => {
+  if (!requireSecret(req, res)) return;
+  try {
+    const template = await getRandomVideoTemplate();
+    if (!template) {
+      return res.status(400).json({ error: 'No indexed templates with descriptions yet — check /admin/template-index-status' });
+    }
+
+    const saved = await getTemplateMatchDefaults().catch(() => null);
+    const textOptions = resolveTextOptions(req.body.textOptions || {}, saved);
+    const text = (req.body.text || '').trim() || 'POV: the GPS says 4 more minutes for 20 minutes';
+
+    const inputPath = await downloadToTemp(template.mediaUrl);
+    let outputPath;
+    try {
+      outputPath = await burnTextOverlay(inputPath, { text, ...textOptions });
+    } finally {
+      cleanupFile(inputPath);
+    }
+
+    const filename = path.basename(outputPath);
+    setTimeout(() => cleanupFile(outputPath), 10 * 60 * 1000).unref();
+    res.json({ previewUrl: `/processed/${filename}`, templateId: template.id });
+  } catch (err) {
+    log.error('preview-render', 'Failed:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
