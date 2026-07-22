@@ -4,6 +4,7 @@ const { generateVideoMemes } = require('./memes');
 const { postToAllPlatforms } = require('./platforms/shortsync');
 const { postToTikTok } = require('./platforms/tiktok');
 const { pickBestTemplate } = require('./template-picker');
+const { writeCaptionForTemplate } = require('./caption-writer');
 const { downloadToTemp, burnTextOverlay, cleanupFile } = require('./video-processing');
 
 const DEFAULT_HASHTAGS = '#fyp #comedy #memes #viral #funny';
@@ -28,9 +29,17 @@ async function runVideoJob(job, {
     job.status = 'generating';
     job.step = 'Picking best-matching template from index...';
     log.info('create', `[${job.id}] template-index mode for: "${prompt}"`);
-    const template = await pickBestTemplate(prompt);
-    memes = [{ url: template.mediaUrl, tagline: prompt, templateId: template.id, needsTextBurn: true }];
-    log.info('create', `[${job.id}] picked template ${template.id}`);
+    try {
+      const template = await pickBestTemplate(prompt);
+      job.step = 'Writing meme caption...';
+      const memeCaption = await writeCaptionForTemplate(prompt, template.description);
+      memes = [{ url: template.mediaUrl, tagline: memeCaption, templateId: template.id, needsTextBurn: true }];
+      log.info('create', `[${job.id}] picked template ${template.id}, caption: "${memeCaption}"`);
+    } catch (err) {
+      log.warn('create', `[${job.id}] template match failed (${err.message}) — falling back to Insider Memes generation`);
+      job.step = `Falling back to Insider Memes for: "${prompt}"...`;
+      memes = await generateVideoMemes(prompt, { mediaType: 'videos', count: 1 });
+    }
   } else {
     job.status = 'generating';
     job.step = `Generating ${count} video(s) with Insider Memes...`;

@@ -6,6 +6,7 @@ const { getTrendingSuggestions, generateBranchedTaglines } = require('./trending
 const { addPrompts } = require('./prompt-store');
 const { getPerformanceSummary } = require('./analytics-feedback');
 const { getState, setState, getLearnings, setLearnings, getEnabled } = require('./autopilot-store');
+const { getDefaults: getTemplateMatchDefaults } = require('./template-match-settings');
 
 const WINDOW_HOURS = Number(process.env.AUTOPILOT_WINDOW_HOURS) || 2;
 const TOTAL_POSTS_PER_DAY = Number(process.env.AUTOPILOT_POSTS_PER_DAY) || 20;
@@ -197,7 +198,12 @@ async function triggerDuePosts(state) {
   for (const post of due) {
     const realJob = require('./job-store').getJob(post.jobId);
     log.info('autopilot', `Triggering scheduled post: "${post.tagline}" (job ${post.jobId})`);
-    runVideoJob(realJob, { prompt: post.tagline, platforms }).catch((err) => {
+    // Autopilot defaults to our own indexed templates (zero Insider Memes
+    // credits, funnier/more deliberate matches) using your saved font/size/
+    // position defaults. runVideoJob itself falls back to Insider Memes
+    // generation automatically if no template match is found.
+    const textOptions = await getTemplateMatchDefaults().catch(() => undefined);
+    runVideoJob(realJob, { prompt: post.tagline, platforms, useTemplateIndex: true, textOptions }).catch((err) => {
       realJob.status = 'error';
       realJob.error = err.message;
       log.error('autopilot', `Scheduled post failed (job ${post.jobId}):`, err.message);

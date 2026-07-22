@@ -183,16 +183,17 @@
     </div>
     <div id="templateMatchOptions" style="display:none; margin-top:14px;">
       <label for="fontSelect">Font</label>
-      <select id="fontSelect"><option value="anton">Anton (Impact-style)</option></select>
+      <select id="fontSelect" onchange="saveTemplateMatchDefaults()"><option value="anton">Anton (Impact-style)</option></select>
 
       <label for="fontSizeInput">Font size (px)</label>
-      <input id="fontSizeInput" type="number" min="20" max="160" value="64" />
+      <input id="fontSizeInput" type="number" min="20" max="160" value="64" onchange="saveTemplateMatchDefaults()" />
 
       <label for="xPosInput">Horizontal position (0 = left, 50 = center, 100 = right)</label>
-      <input id="xPosInput" type="number" min="0" max="100" value="50" />
+      <input id="xPosInput" type="number" min="0" max="100" value="50" onchange="saveTemplateMatchDefaults()" />
 
       <label for="yPosInput">Vertical position (0 = top, 50 = middle, 100 = bottom)</label>
-      <input id="yPosInput" type="number" min="0" max="100" value="8" style="margin-bottom:0;" />
+      <input id="yPosInput" type="number" min="0" max="100" value="8" style="margin-bottom:0;" onchange="saveTemplateMatchDefaults()" />
+      <div class="autopilot-stat" id="templateMatchSaveStatus" style="margin-top:6px;"></div>
     </div>
   </div>
 
@@ -312,16 +313,57 @@
     async function onTemplateMatchToggle() {
       const on = document.getElementById('templateMatchToggle').checked;
       document.getElementById('templateMatchOptions').style.display = on ? 'block' : 'none';
-      if (on && !window._fontsLoaded) {
+      if (!on) return;
+
+      const secret = document.getElementById('secret').value;
+      if (!window._fontsLoaded) {
         try {
           const res = await fetch('/fonts');
           const data = await res.json();
           const select = document.getElementById('fontSelect');
           select.innerHTML = data.fonts.map((f) => `<option value="${f.key}">${escapeHtml(f.label)}</option>`).join('');
           window._fontsLoaded = true;
-        } catch (e) {
-          // keep the default single option if this fails, not worth blocking on
-        }
+        } catch (e) { /* keep default single option */ }
+      }
+      if (secret) {
+        try {
+          const res = await fetch('/settings/template-match?secret=' + encodeURIComponent(secret));
+          const data = await res.json();
+          if (res.ok) {
+            document.getElementById('fontSelect').value = data.font;
+            document.getElementById('fontSizeInput').value = data.fontSize;
+            document.getElementById('xPosInput').value = data.x;
+            document.getElementById('yPosInput').value = data.y;
+          }
+        } catch (e) { /* fall back to whatever's already in the fields */ }
+      }
+    }
+
+    async function saveTemplateMatchDefaults() {
+      const secret = document.getElementById('secret').value;
+      const statusEl = document.getElementById('templateMatchSaveStatus');
+      if (!secret) {
+        statusEl.textContent = 'Enter your app secret to save settings';
+        return;
+      }
+      const body = {
+        secret,
+        font: document.getElementById('fontSelect').value,
+        fontSize: document.getElementById('fontSizeInput').value,
+        x: document.getElementById('xPosInput').value,
+        y: document.getElementById('yPosInput').value,
+      };
+      try {
+        const res = await fetch('/settings/template-match', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) throw new Error((await res.json()).error || 'Save failed');
+        statusEl.textContent = '✓ Saved as default (autopilot uses this too)';
+        setTimeout(() => { statusEl.textContent = ''; }, 3000);
+      } catch (e) {
+        statusEl.textContent = 'Could not save: ' + e.message;
       }
     }
 

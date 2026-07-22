@@ -12,6 +12,7 @@ const { tick } = require('./routes/autopilot');
 const { indexNextBatch } = require('./routes/template-indexer');
 const { getManifest, getCompactList } = require('./routes/template-store');
 const { FONTS } = require('./routes/video-processing');
+const { getDefaults: getTemplateMatchDefaults, setDefaults: setTemplateMatchDefaults } = require('./routes/template-match-settings');
 const { getState: getAutopilotState, getEnabled: getAutopilotEnabled, setEnabled: setAutopilotEnabled, getLearnings: getAutopilotLearnings } = require('./routes/autopilot-store');
 
 // Crash guards: log and keep running instead of the process dying silently
@@ -43,7 +44,7 @@ function requireSecret(req, res) {
   return true;
 }
 
-function validatedCreateParams(body) {
+async function validatedCreateParams(body) {
   const prompt = (body.prompt || '').trim();
   if (!prompt) throw { status: 400, message: 'prompt is required' };
   if (prompt.length > MAX_PROMPT_LEN) throw { status: 400, message: `prompt too long (max ${MAX_PROMPT_LEN} chars)` };
@@ -62,26 +63,27 @@ function validatedCreateParams(body) {
   const useTemplateIndex = !!body.useTemplateIndex;
   let textOptions = {};
   if (useTemplateIndex) {
+    const saved = await getTemplateMatchDefaults().catch(() => null);
     const rawOpts = body.textOptions || {};
-    const font = Object.keys(FONTS).includes(rawOpts.font) ? rawOpts.font : 'anton';
+    const font = Object.keys(FONTS).includes(rawOpts.font) ? rawOpts.font : (saved?.font || 'anton');
     let fontSize = parseInt(rawOpts.fontSize, 10);
-    if (!Number.isInteger(fontSize) || fontSize < 20 || fontSize > 160) fontSize = 64;
+    if (!Number.isInteger(fontSize) || fontSize < 20 || fontSize > 160) fontSize = saved?.fontSize ?? 64;
     let x = parseFloat(rawOpts.x);
-    if (!Number.isFinite(x) || x < 0 || x > 100) x = 50;
+    if (!Number.isFinite(x) || x < 0 || x > 100) x = saved?.x ?? 50;
     let y = parseFloat(rawOpts.y);
-    if (!Number.isFinite(y) || y < 0 || y > 100) y = 8;
+    if (!Number.isFinite(y) || y < 0 || y > 100) y = saved?.y ?? 8;
     textOptions = { font, fontSize, x, y };
   }
 
   return { prompt, description, hashtags, mediaType, count, platforms, useTemplateIndex, textOptions };
 }
 
-app.post('/create', (req, res) => {
+app.post('/create', async (req, res) => {
   if (!requireSecret(req, res)) return;
 
   let params;
   try {
-    params = validatedCreateParams(req.body);
+    params = await validatedCreateParams(req.body);
   } catch (err) {
     return res.status(err.status || 500).json({ error: err.message });
   }
@@ -116,7 +118,7 @@ app.post('/auto-pick', async (req, res) => {
 
   let params;
   try {
-    params = validatedCreateParams({ prompt: picked.tagline });
+    params = await validatedCreateParams({ prompt: picked.tagline });
   } catch (err) {
     return res.status(err.status || 500).json({ error: err.message });
   }
@@ -241,6 +243,33 @@ app.post('/autopilot/toggle', async (req, res) => {
     await setAutopilotEnabled(!!req.body.enabled);
     log.info('autopilot', `Autopilot ${req.body.enabled ? 'ENABLED' : 'disabled'} via frontend toggle`);
     res.json({ enabled: !!req.body.enabled });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/settings/template-match', async (req, res) => {
+  if (!requireSecret(req, res)) return;
+  try {
+    res.json(await getTemplateMatchDefaults());
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/settings/template-match', async (req, res) => {
+  if (!requireSecret(req, res)) return;
+  try {
+    const partial = {};
+    if (Object.keys(FONTS).includes(req.body.font)) partial.font = req.body.font;
+    const fontSize = parseInt(req.body.fontSize, 10);
+    if (Number.isInteger(fontSize) && fontSize >= 20 && fontSize <= 160) partial.fontSize = fontSize;
+    const x = parseFloat(req.body.x);
+    if (Number.isFinite(x) && x >= 0 && x <= 100) partial.x = x;
+    const y = parseFloat(req.body.y);
+    if (Number.isFinite(y) && y >= 0 && y <= 100) partial.y = y;
+    const saved = await setTemplateMatchDefaults(partial);
+    res.json(saved);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
