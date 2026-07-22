@@ -65,15 +65,15 @@ async function validatedCreateParams(body) {
   if (useTemplateIndex) {
     const saved = await getTemplateMatchDefaults().catch(() => null);
     const rawOpts = body.textOptions || {};
-    const font = Object.keys(FONTS).includes(rawOpts.font) ? rawOpts.font : (saved?.font || 'anton');
+    const font = Object.keys(FONTS).includes(rawOpts.font) ? rawOpts.font : (saved?.font || 'poppins');
     let fontSize = parseInt(rawOpts.fontSize, 10);
-    if (!Number.isInteger(fontSize) || fontSize < 20 || fontSize > 160) fontSize = saved?.fontSize ?? 64;
+    if (!Number.isInteger(fontSize) || fontSize < 20 || fontSize > 160) fontSize = saved?.fontSize ?? 58;
     let x = parseFloat(rawOpts.x);
     if (!Number.isFinite(x) || x < 0 || x > 100) x = saved?.x ?? 50;
     let y = parseFloat(rawOpts.y);
-    if (!Number.isFinite(y) || y < 0 || y > 100) y = saved?.y ?? 8;
+    if (!Number.isFinite(y) || y < 0 || y > 100) y = saved?.y ?? 34;
     let width = parseFloat(rawOpts.width);
-    if (!Number.isFinite(width) || width < 10 || width > 100) width = saved?.width ?? 80;
+    if (!Number.isFinite(width) || width < 10 || width > 100) width = saved?.width ?? 82;
     textOptions = { font, fontSize, x, y, width };
   }
 
@@ -133,15 +133,15 @@ app.post('/create-from-saved', async (req, res) => {
 
   const saved = await getTemplateMatchDefaults().catch(() => null);
   const rawOpts = req.body.textOptions || {};
-  const font = Object.keys(FONTS).includes(rawOpts.font) ? rawOpts.font : (saved?.font || 'anton');
+  const font = Object.keys(FONTS).includes(rawOpts.font) ? rawOpts.font : (saved?.font || 'poppins');
   let fontSize = parseInt(rawOpts.fontSize, 10);
-  if (!Number.isInteger(fontSize) || fontSize < 20 || fontSize > 160) fontSize = saved?.fontSize ?? 64;
+  if (!Number.isInteger(fontSize) || fontSize < 20 || fontSize > 160) fontSize = saved?.fontSize ?? 58;
   let x = parseFloat(rawOpts.x);
   if (!Number.isFinite(x) || x < 0 || x > 100) x = saved?.x ?? 50;
   let y = parseFloat(rawOpts.y);
-  if (!Number.isFinite(y) || y < 0 || y > 100) y = saved?.y ?? 8;
+  if (!Number.isFinite(y) || y < 0 || y > 100) y = saved?.y ?? 34;
   let width = parseFloat(rawOpts.width);
-  if (!Number.isFinite(width) || width < 10 || width > 100) width = saved?.width ?? 80;
+  if (!Number.isFinite(width) || width < 10 || width > 100) width = saved?.width ?? 82;
   const textOptions = { font, fontSize, x, y, width };
   const customCaption = (req.body.customCaption || '').trim().slice(0, 120) || null;
 

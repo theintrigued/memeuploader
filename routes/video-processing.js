@@ -19,6 +19,7 @@ const FONTS = {
   bangers: { file: 'Bangers-Regular.ttf', family: 'Bangers', label: 'Bangers (comic)' },
   bebasneue: { file: 'BebasNeue-Regular.ttf', family: 'Bebas Neue', label: 'Bebas Neue (tall/clean)' },
   oswald: { file: 'Oswald-Bold.ttf', family: 'Oswald', label: 'Oswald (condensed bold)' },
+  poppins: { file: 'Poppins-Bold.ttf', family: 'Poppins', label: 'Poppins (clean/system-style)' },
 };
 const DEFAULT_FONT = 'anton';
 
