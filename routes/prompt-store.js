@@ -69,4 +69,18 @@ async function pickOldestUnused() {
   return unused[0] || null;
 }
 
-module.exports = { getPromptsList, addPrompts, markPromptUsed, pickOldestUnused };
+// Same idea, but grabs up to `n` at once — used by autopilot's daily schedule
+// and the "generate N from saved prompts" manual flow, so both draw down the
+// same FIFO queue instead of each having their own picking logic.
+async function pickOldestUnusedBatch(n) {
+  const list = await getJSON(KEY, []);
+  const unused = list.filter((p) => !p.used).sort((a, b) => a.createdAt - b.createdAt);
+  return unused.slice(0, n);
+}
+
+async function countUnused() {
+  const list = await getJSON(KEY, []);
+  return list.filter((p) => !p.used).length;
+}
+
+module.exports = { getPromptsList, addPrompts, markPromptUsed, pickOldestUnused, pickOldestUnusedBatch, countUnused };

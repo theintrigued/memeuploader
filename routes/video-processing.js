@@ -70,10 +70,18 @@ function formatAssTime(seconds) {
 // Builds a minimal .ass file with ONE static text block, positioned with an
 // explicit {\pos(x,y)} override so it lands at an exact pixel spot regardless
 // of style alignment/margins. No animation, no timing splits.
-function buildAssFile({ text, fontFamily, fontSize, xPct, yPct, durationS }) {
+// widthPct: how much of the canvas width the text is allowed to use (higher
+// = less left/right padding, longer lines before wrapping). 0-100.
+function buildAssFile({ text, fontFamily, fontSize, xPct, yPct, widthPct, durationS }) {
   const x = Math.round((xPct / 100) * OUT_W);
   const y = Math.round((yPct / 100) * OUT_H);
-  const lines = wrapText(text, 22);
+  const marginPct = Math.max(0, (100 - widthPct) / 2);
+  const marginPx = Math.round((marginPct / 100) * OUT_W);
+  // Rough chars-per-line estimate: wider allowed width and/or smaller font
+  // both fit more characters before wrapping.
+  const usableWidthPx = OUT_W * (widthPct / 100);
+  const maxCharsPerLine = Math.max(6, Math.round(usableWidthPx / (fontSize * 0.56)));
+  const lines = wrapText(text, maxCharsPerLine);
 
   const header = `[Script Info]
 ScriptType: v4.00+
@@ -83,7 +91,7 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, OutlineColour, BackColour, Bold, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV
-Style: Caption,${fontFamily},${fontSize},&H00FFFFFF,&H00000000,&H99000000,1,3,4,0,8,20,20,20
+Style: Caption,${fontFamily},${fontSize},&H00FFFFFF,&H00000000,&H99000000,1,3,4,0,8,${marginPx},${marginPx},20
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -136,13 +144,13 @@ async function extractFrame(inputPath, atSeconds = 0.5) {
 // Takes an already-downloaded LOCAL video file and burns ONE static text
 // block onto it — no zoom, no animation, no hook/caption split. Normalizes
 // to a 1080x1920 vertical canvas first. Returns the output file path.
-// options: { text, font, fontSize, x (0-100 %), y (0-100 %) }
-async function burnTextOverlay(inputPath, { text, font = DEFAULT_FONT, fontSize = 64, x = 50, y = 8 } = {}) {
+// options: { text, font, fontSize, x (0-100 %), y (0-100 %), width (0-100 %) }
+async function burnTextOverlay(inputPath, { text, font = DEFAULT_FONT, fontSize = 64, x = 50, y = 8, width = 80 } = {}) {
   const fontDef = FONTS[font] || FONTS[DEFAULT_FONT];
   const durationS = await getDurationSeconds(inputPath);
   const outputPath = path.join(PROCESSED_DIR, `${crypto.randomUUID()}-out.mp4`);
   const assPath = path.join(PROCESSED_DIR, `${crypto.randomUUID()}.ass`);
-  fs.writeFileSync(assPath, buildAssFile({ text, fontFamily: fontDef.family, fontSize, xPct: x, yPct: y, durationS }), 'utf8');
+  fs.writeFileSync(assPath, buildAssFile({ text, fontFamily: fontDef.family, fontSize, xPct: x, yPct: y, widthPct: width, durationS }), 'utf8');
 
   const assPathEscaped = assPath.replace(/\\/g, '/').replace(/:/g, '\\:');
   const fontsDirEscaped = FONTS_DIR.replace(/\\/g, '/').replace(/:/g, '\\:');

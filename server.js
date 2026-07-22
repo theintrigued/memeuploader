@@ -5,7 +5,7 @@ const crypto = require('crypto');
 const log = require('./routes/logger');
 const { checkEnv } = require('./routes/env-check');
 const { getTrendingSuggestions } = require('./routes/trending');
-const { getPromptsList, addPrompts, markPromptUsed, pickOldestUnused } = require('./routes/prompt-store');
+const { getPromptsList, addPrompts, markPromptUsed, pickOldestUnused, pickOldestUnusedBatch, countUnused } = require('./routes/prompt-store');
 const { newJob, getJob } = require('./routes/job-store');
 const { runVideoJob } = require('./routes/generate-and-post');
 const { tick } = require('./routes/autopilot');
@@ -72,10 +72,14 @@ async function validatedCreateParams(body) {
     if (!Number.isFinite(x) || x < 0 || x > 100) x = saved?.x ?? 50;
     let y = parseFloat(rawOpts.y);
     if (!Number.isFinite(y) || y < 0 || y > 100) y = saved?.y ?? 8;
-    textOptions = { font, fontSize, x, y };
+    let width = parseFloat(rawOpts.width);
+    if (!Number.isFinite(width) || width < 10 || width > 100) width = saved?.width ?? 80;
+    textOptions = { font, fontSize, x, y, width };
   }
 
-  return { prompt, description, hashtags, mediaType, count, platforms, useTemplateIndex, textOptions };
+  const customCaption = useTemplateIndex ? (body.customCaption || '').trim().slice(0, 120) || null : null;
+
+  return { prompt, description, hashtags, mediaType, count, platforms, useTemplateIndex, textOptions, customCaption };
 }
 
 app.post('/create', async (req, res) => {
@@ -100,6 +104,64 @@ app.post('/create', async (req, res) => {
     job.status = 'error';
     job.error = err.message;
     log.error('create', `Job ${job.id} failed fatally:`, err.message);
+  });
+});
+
+// Template-match mode's main flow: consumes N unused saved prompts (instead
+// of typing one prompt), one video per prompt, all in one job.
+app.post('/create-from-saved', async (req, res) => {
+  if (!requireSecret(req, res)) return;
+
+  let count = parseInt(req.body.promptCount, 10);
+  if (!Number.isInteger(count) || count < 1) count = 1;
+  if (count > 20) count = 20;
+
+  const { platforms, missing } = checkEnv();
+  if (platforms.length > 0 && missing.length > 0) {
+    return res.status(500).json({ error: `Server is misconfigured — missing env vars: ${missing.join(', ')}` });
+  }
+
+  let picked;
+  try {
+    picked = await pickOldestUnusedBatch(count);
+  } catch (err) {
+    return res.status(500).json({ error: `Could not read saved prompts: ${err.message}` });
+  }
+  if (picked.length === 0) {
+    return res.status(400).json({ error: 'please generate more prompts to continue' });
+  }
+
+  const saved = await getTemplateMatchDefaults().catch(() => null);
+  const rawOpts = req.body.textOptions || {};
+  const font = Object.keys(FONTS).includes(rawOpts.font) ? rawOpts.font : (saved?.font || 'anton');
+  let fontSize = parseInt(rawOpts.fontSize, 10);
+  if (!Number.isInteger(fontSize) || fontSize < 20 || fontSize > 160) fontSize = saved?.fontSize ?? 64;
+  let x = parseFloat(rawOpts.x);
+  if (!Number.isFinite(x) || x < 0 || x > 100) x = saved?.x ?? 50;
+  let y = parseFloat(rawOpts.y);
+  if (!Number.isFinite(y) || y < 0 || y > 100) y = saved?.y ?? 8;
+  let width = parseFloat(rawOpts.width);
+  if (!Number.isFinite(width) || width < 10 || width > 100) width = saved?.width ?? 80;
+  const textOptions = { font, fontSize, x, y, width };
+  const customCaption = (req.body.customCaption || '').trim().slice(0, 120) || null;
+
+  const job = newJob('manual');
+  res.json({ jobId: job.id, promptsUsed: picked.map((p) => ({ topic: p.topic, tagline: p.tagline })) });
+
+  for (const p of picked) {
+    markPromptUsed(p.id).catch((err) => log.warn('create-from-saved', `Could not mark prompt ${p.id} used: ${err.message}`));
+  }
+
+  runVideoJob(job, {
+    prompts: picked.map((p) => ({ id: p.id, tagline: p.tagline })),
+    useTemplateIndex: true,
+    textOptions,
+    customCaption,
+    platforms,
+  }).catch((err) => {
+    job.status = 'error';
+    job.error = err.message;
+    log.error('create-from-saved', `Job ${job.id} failed fatally:`, err.message);
   });
 });
 
@@ -178,6 +240,15 @@ app.get('/prompts', async (req, res) => {
 // no-op most of the time — only does real work at a day boundary or when a
 // scheduled post's time has arrived. Also keeps the Render free instance
 // awake, which autonomous posting requires.
+app.get('/prompts/unused-count', async (req, res) => {
+  if (!requireSecret(req, res)) return;
+  try {
+    res.json({ count: await countUnused() });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/cron/tick', async (req, res) => {
   if (!requireSecret(req, res)) return;
   const result = { autopilot: null, templateIndexing: null };
@@ -268,6 +339,8 @@ app.post('/settings/template-match', async (req, res) => {
     if (Number.isFinite(x) && x >= 0 && x <= 100) partial.x = x;
     const y = parseFloat(req.body.y);
     if (Number.isFinite(y) && y >= 0 && y <= 100) partial.y = y;
+    const width = parseFloat(req.body.width);
+    if (Number.isFinite(width) && width >= 10 && width <= 100) partial.width = width;
     const saved = await setTemplateMatchDefaults(partial);
     res.json(saved);
   } catch (err) {

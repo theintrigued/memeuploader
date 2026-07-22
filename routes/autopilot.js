@@ -2,8 +2,8 @@ const axios = require('axios');
 const log = require('./logger');
 const { newJob } = require('./job-store');
 const { runVideoJob } = require('./generate-and-post');
-const { getTrendingSuggestions, generateBranchedTaglines } = require('./trending');
-const { addPrompts } = require('./prompt-store');
+const { getTrendingSuggestions } = require('./trending');
+const { addPrompts, pickOldestUnusedBatch, markPromptUsed } = require('./prompt-store');
 const { getPerformanceSummary } = require('./analytics-feedback');
 const { getState, setState, getLearnings, setLearnings, getEnabled } = require('./autopilot-store');
 const { getDefaults: getTemplateMatchDefaults } = require('./template-match-settings');
@@ -117,63 +117,57 @@ tones to lean into or drop. Be concrete, not generic ("traffic/commute frustrati
   }
 }
 
+// Draws today's schedule from the pool of unused saved prompts (the same
+// pool the Trending/Relatable buttons and "Saved prompts" list use) instead
+// of always running a fresh web search. A search only happens when that pool
+// is completely empty — this is the one thing that costs real search tokens,
+// so we spend it as rarely as possible.
 async function startNewDay(nowMs) {
   const todayKey = localDateKey(nowMs);
-  const learnings = await getLearnings().catch(() => null);
-
-  log.info('autopilot', `Starting new day (${todayKey}) — running daily research...`);
-  const [viral, relatable] = await Promise.all([
-    getTrendingSuggestions('viral', learnings),
-    getTrendingSuggestions('relatable', learnings),
-  ]);
-
-  try {
-    await addPrompts(viral, 'viral');
-    await addPrompts(relatable, 'relatable');
-  } catch (err) {
-    log.warn('autopilot', `Could not persist daily research to prompt store: ${err.message}`);
-  }
-
-  const baseTopics = [
-    ...viral.map((s) => ({ ...s, mode: 'viral' })),
-    ...relatable.map((s) => ({ ...s, mode: 'relatable' })),
-  ];
-
   const dayStartMs = localDayStartMs(nowMs);
   const slots = buildDaySchedule(nowMs, dayStartMs);
 
-  let branched = [];
-  if (slots.length > 0) {
+  let picked = slots.length > 0 ? await pickOldestUnusedBatch(slots.length) : [];
+  let ranSearch = false;
+
+  if (picked.length === 0 && slots.length > 0) {
+    log.info('autopilot', 'No unused saved prompts left — running daily research to replenish the pool...');
+    const learnings = await getLearnings().catch(() => null);
+    const [viral, relatable] = await Promise.all([
+      getTrendingSuggestions('viral', learnings),
+      getTrendingSuggestions('relatable', learnings),
+    ]);
     try {
-      branched = await generateBranchedTaglines(baseTopics, slots.length);
+      await addPrompts(viral, 'viral');
+      await addPrompts(relatable, 'relatable');
     } catch (err) {
-      log.warn('autopilot', `Branch generation failed, falling back to base topics directly: ${err.message}`);
+      log.warn('autopilot', `Could not persist daily research to prompt store: ${err.message}`);
     }
+    ranSearch = true;
+    picked = await pickOldestUnusedBatch(slots.length);
+  } else if (picked.length < slots.length) {
+    log.info('autopilot', `Only ${picked.length} unused prompt(s) available for ${slots.length} slot(s) — scheduling fewer posts today rather than searching early`);
   }
 
-  const scheduledPosts = slots.map((slot, i) => {
-    const b = branched[i];
-    const fallback = baseTopics[i % baseTopics.length];
-    return {
-      time: slot.time,
-      topic: b?.topic || fallback.topic,
-      tagline: b?.tagline || fallback.tagline,
-      mode: b?.mode || fallback.mode,
-      executed: false,
-      jobId: null,
-    };
-  });
+  const scheduledPosts = picked.map((p, i) => ({
+    time: slots[i].time,
+    promptId: p.id,
+    topic: p.topic,
+    tagline: p.tagline,
+    mode: p.mode,
+    executed: false,
+    jobId: null,
+  }));
 
   const newState = {
     date: todayKey,
-    dailySearchDone: true,
-    baseTopics,
+    ranSearch,
     scheduledPosts,
     endOfDayAnalysisDone: false,
     createdAt: nowMs,
   };
   await setState(newState);
-  log.info('autopilot', `Day ${todayKey} scheduled: ${scheduledPosts.length} post(s) across the remaining day`);
+  log.info('autopilot', `Day ${todayKey} scheduled: ${scheduledPosts.length} post(s) from saved prompts${ranSearch ? ' (pool was empty, replenished via search)' : ''}`);
   return newState;
 }
 
@@ -198,6 +192,9 @@ async function triggerDuePosts(state) {
   for (const post of due) {
     const realJob = require('./job-store').getJob(post.jobId);
     log.info('autopilot', `Triggering scheduled post: "${post.tagline}" (job ${post.jobId})`);
+    if (post.promptId) {
+      markPromptUsed(post.promptId).catch((err) => log.warn('autopilot', `Could not mark prompt used: ${err.message}`));
+    }
     // Autopilot defaults to our own indexed templates (zero Insider Memes
     // credits, funnier/more deliberate matches) using your saved font/size/
     // position defaults. runVideoJob itself falls back to Insider Memes
@@ -245,7 +242,8 @@ async function tick() {
   return {
     enabled: true,
     date: state.date,
-    ranDailySearch,
+    dayBoundaryCrossed: ranDailySearch,
+    ranSearch: !!state.ranSearch,
     postsTriggeredThisTick: triggered.length,
     triggered,
     totalScheduledToday: state.scheduledPosts.length,

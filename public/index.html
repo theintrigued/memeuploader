@@ -128,6 +128,11 @@
     .autopilot-stat { font-size: 12px; color: var(--muted); margin-top: 4px; }
     .autopilot-stat b { color: var(--text); }
     .learnings-box { font-size: 12px; color: var(--muted); margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); line-height: 1.5; }
+    .warning-box { font-size: 13px; color: #fbbf24; background: rgba(251,191,36,0.1); border: 1px solid rgba(251,191,36,0.3); border-radius: 10px; padding: 10px 12px; margin-bottom: 14px; }
+    .section-label { font-size: 13px; font-weight: 700; color: var(--text); margin: 4px 0 10px; }
+    .mode-tab-row { display: flex; gap: 8px; margin-bottom: 16px; }
+    .mode-tab { flex: 1; padding: 12px 6px; text-align: center; border-radius: 10px; border: 1px solid var(--border); background: #1f1f28; font-size: 13px; font-weight: 700; cursor: pointer; color: var(--muted); }
+    .mode-tab.active { background: linear-gradient(90deg, var(--accent), var(--accent2)); color: #0b0b0f; border-color: transparent; }
   </style>
 </head>
 <body>
@@ -136,7 +141,7 @@
 
   <div class="card">
     <label for="secret">App secret</label>
-    <input id="secret" type="password" placeholder="••••••••" style="margin-bottom:0;" onchange="loadAutopilotStatus()" />
+    <input id="secret" type="password" placeholder="••••••••" style="margin-bottom:0;" onchange="loadAutopilotStatus(); refreshUnusedCount();" />
   </div>
 
   <div class="card" id="autopilotCard">
@@ -153,40 +158,94 @@
     <div id="autopilotLearnings"></div>
   </div>
 
-  <button class="btn-secondary" id="autoPickBtn" type="button" onclick="autoPick()" style="font-size:13px;">🎲 Auto-pick a saved prompt & post now</button>
+  <button class="btn-secondary" id="autoPickBtn" type="button" onclick="autoPick()" style="font-size:13px;">🎲 Quick auto-pick (single saved prompt, Insider Memes)</button>
 
-  <div style="height:16px;"></div>
-  <div class="subtitle" style="margin-bottom:8px;">— or generate manually —</div>
-
+  <div style="height:20px;"></div>
+  <div class="section-label">1. Find or generate prompts</div>
   <div style="display:flex; gap:8px;">
     <button class="btn-secondary" id="trendingBtn" type="button" onclick="loadTrending('viral')" style="margin-bottom:0; flex:1; font-size:13px; padding:12px 6px;">🔥 Trending topics</button>
     <button class="btn-secondary" id="relatableBtn" type="button" onclick="loadTrending('relatable')" style="margin-bottom:0; flex:1; font-size:13px; padding:12px 6px;">🌍 Relatable moments</button>
   </div>
-  <button class="btn-secondary" id="savedBtn" type="button" onclick="loadSaved()" style="margin-top:8px; font-size:13px;">📋 Saved prompts (not yet used)</button>
+  <button class="btn-secondary" id="savedBtn" type="button" onclick="loadSaved()" style="margin-top:8px; font-size:13px;">📋 Saved prompts — <span id="unusedCountLabel">?</span> unused</button>
   <div id="trendingList"></div>
 
-  <div class="card" style="margin-top:16px;">
-    <label for="prompt">Prompt</label>
-    <textarea id="prompt" rows="3" placeholder="e.g. streamer rage quits after losing to a bot" style="margin-bottom:0;"></textarea>
+  <div style="height:20px;"></div>
+  <div class="section-label">2. Choose how to generate</div>
+  <div class="mode-tab-row">
+    <div class="mode-tab active" id="modeTabInsider" onclick="setMode('insider')">🤖 Insider Memes</div>
+    <div class="mode-tab" id="modeTabTemplate" onclick="setMode('template')">🎯 Our templates</div>
   </div>
 
-  <div class="card">
-    <div class="switch-row">
-      <div>
-        <div style="font-weight:700; font-size:14px;">🎯 Match to existing template</div>
-        <div class="autopilot-stat">Skips Insider Memes credits — picks from our own indexed library and adds text ourselves</div>
-      </div>
-      <label class="switch">
-        <input type="checkbox" id="templateMatchToggle" onchange="onTemplateMatchToggle()" />
-        <span class="switch-track"></span>
-      </label>
+  <!-- Insider Memes mode: type one prompt, their AI picks a template and writes the caption -->
+  <div id="insiderModePanel">
+    <div class="card">
+      <label for="prompt">Prompt</label>
+      <textarea id="prompt" rows="3" placeholder="e.g. streamer rage quits after losing to a bot" style="margin-bottom:0;"></textarea>
     </div>
-    <div id="templateMatchOptions" style="display:none; margin-top:14px;">
+
+    <details>
+      <summary>Advanced options</summary>
+      <div class="card">
+        <label for="mediaType">Media type</label>
+        <select id="mediaType">
+          <option value="videos" selected>Video</option>
+          <option value="images">Image</option>
+          <option value="all">All (mixed)</option>
+        </select>
+
+        <label for="count">Count (1–12) — every result posts to every platform</label>
+        <input id="count" type="number" min="1" max="12" value="1" />
+
+        <label for="description">Description (optional)</label>
+        <textarea id="description" rows="2" placeholder="Extra context to add to the caption"></textarea>
+
+        <label for="hashtags">Hashtags (optional)</label>
+        <input id="hashtags" type="text" placeholder="#twitch #gaming #fail" style="margin-bottom:0;" />
+      </div>
+    </details>
+  </div>
+
+  <!-- Template match mode: no free-text prompt — consumes N unused saved prompts,
+       matches each to our own indexed template, and burns text on ourselves.
+       Zero Insider Memes credits. -->
+  <div id="templateModePanel" style="display:none;">
+    <div class="card">
+      <div id="templateModeBlocked" class="warning-box" style="display:none;">
+        Please generate more prompts to continue — tap 🔥 or 🌍 above first.
+      </div>
+      <div id="templateModeReady">
+        <label for="promptCountInput">How many videos to generate (one per saved prompt)</label>
+        <input id="promptCountInput" type="number" min="1" max="20" value="1" style="margin-bottom:0;" />
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="switch-row">
+        <div>
+          <div style="font-weight:700; font-size:14px;">✍️ Write my own caption</div>
+          <div class="autopilot-stat">Off = Claude writes a real meme-format caption for each video</div>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="customCaptionToggle" onchange="onCustomCaptionToggle()" />
+          <span class="switch-track"></span>
+        </label>
+      </div>
+      <div id="customCaptionBox" style="display:none; margin-top:12px;">
+        <textarea id="customCaptionInput" rows="2" placeholder="e.g. POV: the GPS says 4 more minutes for 20 minutes" maxlength="120" style="margin-bottom:0;"></textarea>
+        <div class="autopilot-stat">Same caption used on every video generated this batch</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="section-label" style="margin-bottom:12px;">Text style (auto-saves — autopilot uses these too)</div>
       <label for="fontSelect">Font</label>
       <select id="fontSelect" onchange="saveTemplateMatchDefaults()"><option value="anton">Anton (Impact-style)</option></select>
 
       <label for="fontSizeInput">Font size (px)</label>
       <input id="fontSizeInput" type="number" min="20" max="160" value="64" onchange="saveTemplateMatchDefaults()" />
+
+      <label for="widthInput">Text width (higher = less left/right padding)</label>
+      <input id="widthInput" type="number" min="10" max="100" value="80" onchange="saveTemplateMatchDefaults()" />
 
       <label for="xPosInput">Horizontal position (0 = left, 50 = center, 100 = right)</label>
       <input id="xPosInput" type="number" min="0" max="100" value="50" onchange="saveTemplateMatchDefaults()" />
@@ -197,28 +256,7 @@
     </div>
   </div>
 
-  <details>
-    <summary>Advanced options</summary>
-    <div class="card">
-      <label for="mediaType">Media type</label>
-      <select id="mediaType">
-        <option value="videos" selected>Video</option>
-        <option value="images">Image</option>
-        <option value="all">All (mixed)</option>
-      </select>
-
-      <label for="count">Count (1–12) — every result posts to every platform</label>
-      <input id="count" type="number" min="1" max="12" value="1" />
-
-      <label for="description">Description (optional)</label>
-      <textarea id="description" rows="2" placeholder="Extra context to add to the caption"></textarea>
-
-      <label for="hashtags">Hashtags (optional)</label>
-      <input id="hashtags" type="text" placeholder="#twitch #gaming #fail" style="margin-bottom:0;" />
-    </div>
-  </details>
-
-  <button class="btn-primary" id="submitBtn" onclick="submitPrompt()" style="margin-top:12px;">Generate & Post</button>
+  <button class="btn-primary" id="submitBtn" onclick="submitPrompt()" style="margin-top:4px;">Generate & Post</button>
 
   <div id="progressWrap" class="card" style="margin-top:16px;">
     <div id="progressBarOuter"><div id="progressBarInner"></div></div>
@@ -310,12 +348,36 @@
     // switch reflects reality even if you toggled it from another device.
     setInterval(() => { if (document.getElementById('secret').value) loadAutopilotStatus(); }, 30000);
 
-    async function onTemplateMatchToggle() {
-      const on = document.getElementById('templateMatchToggle').checked;
-      document.getElementById('templateMatchOptions').style.display = on ? 'block' : 'none';
-      if (!on) return;
+    window._mode = 'insider'; // 'insider' | 'template'
 
+    async function refreshUnusedCount() {
       const secret = document.getElementById('secret').value;
+      if (!secret) return;
+      try {
+        const res = await fetch('/prompts/unused-count?secret=' + encodeURIComponent(secret));
+        const data = await res.json();
+        if (!res.ok) return;
+        document.getElementById('unusedCountLabel').textContent = data.count;
+        const blocked = data.count === 0;
+        document.getElementById('templateModeBlocked').style.display = blocked ? 'block' : 'none';
+        document.getElementById('templateModeReady').style.display = blocked ? 'none' : 'block';
+        const countInput = document.getElementById('promptCountInput');
+        countInput.max = Math.max(1, data.count);
+        if (parseInt(countInput.value, 10) > data.count) countInput.value = Math.max(1, data.count);
+      } catch (e) { /* leave last-known state on screen */ }
+    }
+
+    async function setMode(mode) {
+      window._mode = mode;
+      document.getElementById('modeTabInsider').classList.toggle('active', mode === 'insider');
+      document.getElementById('modeTabTemplate').classList.toggle('active', mode === 'template');
+      document.getElementById('insiderModePanel').style.display = mode === 'insider' ? 'block' : 'none';
+      document.getElementById('templateModePanel').style.display = mode === 'template' ? 'block' : 'none';
+      // Re-render whatever's in the suggestions list so chips become
+      // clickable/non-clickable appropriately for the new mode.
+      if (window._trending) renderChips(window._trending);
+
+      if (mode !== 'template') return;
       if (!window._fontsLoaded) {
         try {
           const res = await fetch('/fonts');
@@ -325,6 +387,7 @@
           window._fontsLoaded = true;
         } catch (e) { /* keep default single option */ }
       }
+      const secret = document.getElementById('secret').value;
       if (secret) {
         try {
           const res = await fetch('/settings/template-match?secret=' + encodeURIComponent(secret));
@@ -332,11 +395,18 @@
           if (res.ok) {
             document.getElementById('fontSelect').value = data.font;
             document.getElementById('fontSizeInput').value = data.fontSize;
+            document.getElementById('widthInput').value = data.width;
             document.getElementById('xPosInput').value = data.x;
             document.getElementById('yPosInput').value = data.y;
           }
         } catch (e) { /* fall back to whatever's already in the fields */ }
       }
+      refreshUnusedCount();
+    }
+
+    function onCustomCaptionToggle() {
+      document.getElementById('customCaptionBox').style.display =
+        document.getElementById('customCaptionToggle').checked ? 'block' : 'none';
     }
 
     async function saveTemplateMatchDefaults() {
@@ -350,6 +420,7 @@
         secret,
         font: document.getElementById('fontSelect').value,
         fontSize: document.getElementById('fontSizeInput').value,
+        width: document.getElementById('widthInput').value,
         x: document.getElementById('xPosInput').value,
         y: document.getElementById('yPosInput').value,
       };
@@ -374,10 +445,16 @@
         el.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:8px 0;">Nothing here yet.</div>';
         return;
       }
+      const clickable = window._mode === 'insider';
       el.innerHTML = list.map((s, i) => {
         const hookLine = s.newsHook ? `<span class="tagline" style="color:var(--accent2);">📰 ${escapeHtml(s.newsHook)}</span>` : '';
-        return `<div class="chip" onclick="useTagline(${i})"><strong>${escapeHtml(s.topic)}</strong><span class="tagline">${escapeHtml(s.tagline)}</span>${hookLine}</div>`;
+        const onclick = clickable ? `onclick="useTagline(${i})"` : '';
+        const style = clickable ? '' : 'style="cursor:default;"';
+        return `<div class="chip" ${onclick} ${style}><strong>${escapeHtml(s.topic)}</strong><span class="tagline">${escapeHtml(s.tagline)}</span>${hookLine}</div>`;
       }).join('');
+      if (!clickable) {
+        el.insertAdjacentHTML('beforeend', '<div class="autopilot-stat" style="margin-top:8px;">In template mode, prompts are used oldest-first automatically — set how many above.</div>');
+      }
     }
 
     async function loadTrending(mode) {
@@ -394,6 +471,7 @@
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Request failed');
         renderChips(data.suggestions);
+        refreshUnusedCount();
       } catch (e) {
         list.innerHTML = '<div style="color:var(--red);font-size:13px;padding:8px 0;">Failed to load: ' + escapeHtml(e.message) + '</div>';
       }
@@ -416,6 +494,7 @@
         const unused = data.prompts.filter((p) => !p.used);
         const usedCount = data.prompts.length - unused.length;
         renderChips(unused);
+        refreshUnusedCount();
         if (usedCount > 0) {
           document.getElementById('trendingList').insertAdjacentHTML(
             'beforeend',
@@ -442,6 +521,11 @@
     });
 
     async function submitPrompt() {
+      if (window._mode === 'template') return submitTemplateMode();
+      return submitInsiderMode();
+    }
+
+    async function submitInsiderMode() {
       const btn = document.getElementById('submitBtn');
       const progressWrap = document.getElementById('progressWrap');
       const secret = document.getElementById('secret').value;
@@ -451,31 +535,18 @@
       const description = document.getElementById('description').value;
       const hashtags = document.getElementById('hashtags').value;
       const promptId = window._selectedPromptId || null;
-      const useTemplateIndex = document.getElementById('templateMatchToggle').checked;
-      const textOptions = useTemplateIndex ? {
-        font: document.getElementById('fontSelect').value,
-        fontSize: document.getElementById('fontSizeInput').value,
-        x: document.getElementById('xPosInput').value,
-        y: document.getElementById('yPosInput').value,
-      } : undefined;
 
       if (!prompt.trim()) {
         alert('Enter a prompt first.');
         return;
       }
 
-      btn.disabled = true;
-      btn.innerHTML = '<span class="spinner"></span>Working...';
-      progressWrap.style.display = 'block';
-      document.getElementById('stepText').innerHTML = '<span class="spinner"></span>Sending request...';
-      document.getElementById('progressBarInner').style.width = '0%';
-      document.getElementById('videoList').innerHTML = '';
-
+      startProgress(btn);
       try {
         const res = await fetch('/create', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ secret, prompt, mediaType, count, description, hashtags, promptId, useTemplateIndex, textOptions }),
+          body: JSON.stringify({ secret, prompt, mediaType, count, description, hashtags, promptId }),
         });
         const data = await res.json();
         if (!res.ok) {
@@ -488,6 +559,56 @@
         document.getElementById('stepText').textContent = 'Error: ' + e.message;
         resetButton();
       }
+    }
+
+    async function submitTemplateMode() {
+      const btn = document.getElementById('submitBtn');
+      const secret = document.getElementById('secret').value;
+      const promptCount = document.getElementById('promptCountInput').value;
+      const useCustomCaption = document.getElementById('customCaptionToggle').checked;
+      const customCaption = useCustomCaption ? document.getElementById('customCaptionInput').value.trim() : '';
+
+      if (useCustomCaption && !customCaption) {
+        alert('Enter a caption, or turn off "Write my own caption".');
+        return;
+      }
+
+      const textOptions = {
+        font: document.getElementById('fontSelect').value,
+        fontSize: document.getElementById('fontSizeInput').value,
+        width: document.getElementById('widthInput').value,
+        x: document.getElementById('xPosInput').value,
+        y: document.getElementById('yPosInput').value,
+      };
+
+      startProgress(btn);
+      try {
+        const res = await fetch('/create-from-saved', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ secret, promptCount, customCaption: customCaption || undefined, textOptions }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          document.getElementById('stepText').textContent = 'Error: ' + (data.error || 'Request failed');
+          resetButton();
+          return;
+        }
+        pollJob(data.jobId);
+        refreshUnusedCount();
+      } catch (e) {
+        document.getElementById('stepText').textContent = 'Error: ' + e.message;
+        resetButton();
+      }
+    }
+
+    function startProgress(btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span>Working...';
+      document.getElementById('progressWrap').style.display = 'block';
+      document.getElementById('stepText').innerHTML = '<span class="spinner"></span>Sending request...';
+      document.getElementById('progressBarInner').style.width = '0%';
+      document.getElementById('videoList').innerHTML = '';
     }
 
     function resetButton() {
