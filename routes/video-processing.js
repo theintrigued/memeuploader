@@ -144,9 +144,15 @@ async function extractFrame(inputPath, atSeconds = 0.5) {
 
 // Takes an already-downloaded LOCAL video file and burns ONE static text
 // block onto it — no zoom, no animation, no hook/caption split. Normalizes
-// to a 1080x1920 vertical canvas first. Returns the output file path.
-// options: { text, font, fontSize, x (0-100 %), y (0-100 %), width (0-100 %) }
-async function burnTextOverlay(inputPath, { text, font = DEFAULT_FONT, fontSize = 64, x = 50, y = 8, width = 80 } = {}) {
+// to a 1080x1920 vertical canvas. The video itself can be shrunk vertically
+// (videoHeight, % of canvas height) and anchored top/center/bottom, freeing
+// a black bar for the text instead of overlaying it on the clip.
+// options: { text, font, fontSize, x (0-100 %), y (0-100 %), width (0-100 %),
+//            videoHeight (10-100 %), videoAnchor ('top'|'center'|'bottom') }
+async function burnTextOverlay(inputPath, {
+  text, font = DEFAULT_FONT, fontSize = 64, x = 50, y = 8, width = 80,
+  videoHeight = 100, videoAnchor = 'bottom',
+} = {}) {
   const fontDef = FONTS[font] || FONTS[DEFAULT_FONT];
   const durationS = await getDurationSeconds(inputPath);
   const outputPath = path.join(PROCESSED_DIR, `${crypto.randomUUID()}-out.mp4`);
@@ -156,9 +162,16 @@ async function burnTextOverlay(inputPath, { text, font = DEFAULT_FONT, fontSize 
   const assPathEscaped = assPath.replace(/\\/g, '/').replace(/:/g, '\\:');
   const fontsDirEscaped = FONTS_DIR.replace(/\\/g, '/').replace(/:/g, '\\:');
 
+  const videoHeightPx = Math.round(OUT_H * (Math.min(100, Math.max(10, videoHeight)) / 100));
+  let yOffset;
+  if (videoAnchor === 'top') yOffset = 0;
+  else if (videoAnchor === 'center') yOffset = Math.round((OUT_H - videoHeightPx) / 2);
+  else yOffset = OUT_H - videoHeightPx; // bottom (default) — frees a bar at the top for the caption
+
   const vf = [
-    `scale=${OUT_W}:${OUT_H}:force_original_aspect_ratio=decrease`,
-    `pad=${OUT_W}:${OUT_H}:(ow-iw)/2:(oh-ih)/2:color=black`,
+    `scale=${OUT_W}:${videoHeightPx}:force_original_aspect_ratio=decrease`,
+    `pad=${OUT_W}:${videoHeightPx}:(ow-iw)/2:(oh-ih)/2:color=black`,
+    `pad=${OUT_W}:${OUT_H}:0:${yOffset}:color=black`,
     `subtitles='${assPathEscaped}':fontsdir='${fontsDirEscaped}'`,
   ].join(',');
 

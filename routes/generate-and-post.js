@@ -23,7 +23,7 @@ const DEFAULT_HASHTAGS = '#fyp #comedy #memes #viral #funny';
 // instead picks a raw template from our own indexed library (see
 // template-picker.js) and burns our own text onto it via ffmpeg. Costs zero
 // Insider Memes credits.
-// textOptions: { font, fontSize, x, y, width } — only used when useTemplateIndex is true.
+// textOptions: { font, fontSize, x, y, width, videoHeight, videoAnchor } — only used when useTemplateIndex is true.
 // customCaption: if set, used verbatim instead of asking Claude to write one
 // (applies to every video when in batch mode).
 async function runVideoJob(job, {

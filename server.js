@@ -45,6 +45,22 @@ function requireSecret(req, res) {
   return true;
 }
 
+function resolveTextOptions(rawOpts, saved) {
+  const font = Object.keys(FONTS).includes(rawOpts.font) ? rawOpts.font : (saved?.font || 'poppins');
+  let fontSize = parseInt(rawOpts.fontSize, 10);
+  if (!Number.isInteger(fontSize) || fontSize < 20 || fontSize > 160) fontSize = saved?.fontSize ?? 74;
+  let x = parseFloat(rawOpts.x);
+  if (!Number.isFinite(x) || x < 0 || x > 100) x = saved?.x ?? 50;
+  let y = parseFloat(rawOpts.y);
+  if (!Number.isFinite(y) || y < 0 || y > 100) y = saved?.y ?? 12;
+  let width = parseFloat(rawOpts.width);
+  if (!Number.isFinite(width) || width < 10 || width > 100) width = saved?.width ?? 92;
+  let videoHeight = parseFloat(rawOpts.videoHeight);
+  if (!Number.isFinite(videoHeight) || videoHeight < 10 || videoHeight > 100) videoHeight = saved?.videoHeight ?? 72;
+  const videoAnchor = ['top', 'center', 'bottom'].includes(rawOpts.videoAnchor) ? rawOpts.videoAnchor : (saved?.videoAnchor || 'bottom');
+  return { font, fontSize, x, y, width, videoHeight, videoAnchor };
+}
+
 async function validatedCreateParams(body) {
   const prompt = (body.prompt || '').trim();
   if (!prompt) throw { status: 400, message: 'prompt is required' };
@@ -65,17 +81,7 @@ async function validatedCreateParams(body) {
   let textOptions = {};
   if (useTemplateIndex) {
     const saved = await getTemplateMatchDefaults().catch(() => null);
-    const rawOpts = body.textOptions || {};
-    const font = Object.keys(FONTS).includes(rawOpts.font) ? rawOpts.font : (saved?.font || 'poppins');
-    let fontSize = parseInt(rawOpts.fontSize, 10);
-    if (!Number.isInteger(fontSize) || fontSize < 20 || fontSize > 160) fontSize = saved?.fontSize ?? 58;
-    let x = parseFloat(rawOpts.x);
-    if (!Number.isFinite(x) || x < 0 || x > 100) x = saved?.x ?? 50;
-    let y = parseFloat(rawOpts.y);
-    if (!Number.isFinite(y) || y < 0 || y > 100) y = saved?.y ?? 34;
-    let width = parseFloat(rawOpts.width);
-    if (!Number.isFinite(width) || width < 10 || width > 100) width = saved?.width ?? 82;
-    textOptions = { font, fontSize, x, y, width };
+    textOptions = resolveTextOptions(body.textOptions || {}, saved);
   }
 
   const customCaption = useTemplateIndex ? (body.customCaption || '').trim().slice(0, 120) || null : null;
@@ -133,17 +139,7 @@ app.post('/create-from-saved', async (req, res) => {
   }
 
   const saved = await getTemplateMatchDefaults().catch(() => null);
-  const rawOpts = req.body.textOptions || {};
-  const font = Object.keys(FONTS).includes(rawOpts.font) ? rawOpts.font : (saved?.font || 'poppins');
-  let fontSize = parseInt(rawOpts.fontSize, 10);
-  if (!Number.isInteger(fontSize) || fontSize < 20 || fontSize > 160) fontSize = saved?.fontSize ?? 58;
-  let x = parseFloat(rawOpts.x);
-  if (!Number.isFinite(x) || x < 0 || x > 100) x = saved?.x ?? 50;
-  let y = parseFloat(rawOpts.y);
-  if (!Number.isFinite(y) || y < 0 || y > 100) y = saved?.y ?? 34;
-  let width = parseFloat(rawOpts.width);
-  if (!Number.isFinite(width) || width < 10 || width > 100) width = saved?.width ?? 82;
-  const textOptions = { font, fontSize, x, y, width };
+  const textOptions = resolveTextOptions(req.body.textOptions || {}, saved);
   const customCaption = (req.body.customCaption || '').trim().slice(0, 120) || null;
 
   const job = newJob('manual');
@@ -342,6 +338,9 @@ app.post('/settings/template-match', async (req, res) => {
     if (Number.isFinite(y) && y >= 0 && y <= 100) partial.y = y;
     const width = parseFloat(req.body.width);
     if (Number.isFinite(width) && width >= 10 && width <= 100) partial.width = width;
+    const videoHeight = parseFloat(req.body.videoHeight);
+    if (Number.isFinite(videoHeight) && videoHeight >= 10 && videoHeight <= 100) partial.videoHeight = videoHeight;
+    if (['top', 'center', 'bottom'].includes(req.body.videoAnchor)) partial.videoAnchor = req.body.videoAnchor;
     const saved = await setTemplateMatchDefaults(partial);
     res.json(saved);
   } catch (err) {

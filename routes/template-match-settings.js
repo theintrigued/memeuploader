@@ -2,7 +2,7 @@ const { getJSON, setJSON } = require('./upstash-client');
 
 const KEY = 'clipvault_template_match_defaults';
 
-const HARD_DEFAULTS = { font: 'poppins', fontSize: 74, x: 50, y: 30, width: 92 };
+const HARD_DEFAULTS = { font: 'poppins', fontSize: 74, x: 50, y: 12, width: 92, videoHeight: 72, videoAnchor: 'bottom' };
 
 async function getDefaults() {
   const saved = await getJSON(KEY, null);
