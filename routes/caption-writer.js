@@ -1,45 +1,39 @@
 const axios = require('axios');
+const { pickNextFormat, recordFormatUsed } = require('./caption-format-store');
 
 // Used on the template-match path, where we bypass Insider Memes' own
 // caption AI entirely — so something has to write the actual on-screen line.
-// Grounded in how real memes are actually captioned (not a description of
-// the situation, but one of a handful of recognizable formats):
-//   - "POV: <you're in this exact situation>"
-//   - "me when <thing happens>"
-//   - "nobody:\nme:" (setup/punchline two-liner)
-//   - "day <n> of <ongoing thing>"
-//   - "that one friend who <specific behavior>"
-//   - "the way I <reaction>" / "me realizing <thing>"
-// These work because they're SHORT, FIRST-PERSON OR DIRECT-ADDRESS, and land
-// on one specific absurd/relatable beat — not a narrated description.
-const SYSTEM_PROMPT = `You write on-screen captions for meme videos, in the actual style real memes use online —
+//
+// The format (POV / me when / nobody-me / etc.) is chosen deterministically
+// by pickNextFormat() BEFORE calling Claude, rotating away from whatever was
+// used most recently — this is what actually guarantees variety across
+// posts, rather than leaving format choice up to the model each time (which
+// in practice tended to default to the same one or two formats repeatedly).
+function buildSystemPrompt(format) {
+  return `You write ONE on-screen caption for a meme video, in the actual style real memes use online —
 not a description of what's happening, a proper meme caption.
 
-Real meme captions almost always use one of these recognizable formats:
-- "POV: <you're in this exact situation>" — e.g. "POV: you said you'd sleep at 10pm"
-- "me when <thing happens>" — e.g. "me when the wifi buffers for one second"
-- "nobody:\\nme:" — a two-line setup/punchline where the punchline is the absurd reaction
-- "day <n> of <ongoing thing>" — e.g. "day 47 of waiting for payday"
-- "that one friend who <specific behavior>"
-- "the way I <reaction>" / "me realizing <thing>"
+${format.instruction}
 
 Rules:
-- Pick whichever format best fits the situation given — don't force POV if "me when" lands better.
 - Stay under 10 words (two lines max if using the nobody/me format).
 - Be SPECIFIC and a little absurd, not a flat restatement of the situation. "POV: stuck in traffic"
   is weak. "POV: the GPS says 4 more minutes for the last 20 minutes" is a real caption.
 - No hashtags, no emoji, no quotation marks around the output.
 - Respond with ONLY the caption text, nothing else.`;
+}
 
 async function writeCaptionForTemplate(tagline, templateDescription) {
   if (!process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY not set');
+
+  const format = await pickNextFormat();
 
   const res = await axios.post(
     'https://api.anthropic.com/v1/messages',
     {
       model: 'claude-sonnet-5',
       max_tokens: 60,
-      system: SYSTEM_PROMPT,
+      system: buildSystemPrompt(format),
       messages: [{ role: 'user', content: `Situation: "${tagline}"\nVideo template shows: ${templateDescription}` }],
     },
     {
@@ -51,7 +45,13 @@ async function writeCaptionForTemplate(tagline, templateDescription) {
       timeout: 30000,
     }
   );
-  return res.data.content.filter((b) => b.type === 'text').map((b) => b.text).join(' ').trim().replace(/^"|"$/g, '');
+  const caption = res.data.content.filter((b) => b.type === 'text').map((b) => b.text).join(' ').trim().replace(/^"|"$/g, '');
+
+  // Record after a successful generation, not before — a failed call shouldn't
+  // count as having "used" that format.
+  recordFormatUsed(format.id).catch(() => {}); // best-effort, never block on this
+
+  return caption;
 }
 
 module.exports = { writeCaptionForTemplate };

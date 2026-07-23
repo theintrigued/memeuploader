@@ -43,6 +43,15 @@ Insider Memes' own examples do — a short, vivid SITUATION or EMOTION, not a pu
   Good: "finding out your ex is dating your friend"
   Bad: "Watch him crumble like a disgraced king losing his throne to a peasant" (too written, too long)
 Keep each tagline under 12 words, concrete, keyword-rich, one clear emotional beat.
+
+On naming real people/things: don't default to anonymizing everything into generic phrasing. If a
+real, widely-recognized name is directly relevant and current (a celebrity, an athlete, a movie/show
+that just released, a big ongoing news story), USE it — specificity like this is often what makes
+something read as happening right now instead of a generic template. Only generalize when the
+specific reference genuinely wouldn't be recognized by a broad audience.
+  Good (named): "Erling Haaland reacting to a bad ref call"
+  Good (named): "The Odyssey trailer dropping and Nolan fans losing it"
+  Still fine (generic): "stuck in traffic for two hours" — no natural named anchor, that's OK too
 ${categoryLine}
 ${performanceLine}
 ${learningsLine}
@@ -61,12 +70,16 @@ people who watch that streamer, but "stuck in traffic for two hours" lands with 
 Search the web for big news or viral events happening right now that a lot of people are personally
 experiencing or reacting to — extreme weather, travel chaos, a massive traffic jam, a price spike, a
 long queue/wait somewhere, a widespread outage, back-to-school/holiday stress, a sports event most
-casual people have an opinion on, etc. Then translate each into a small, funny, universally-relatable
-personal situation tied to that real event — the news event gives it timeliness and grounding, but the
-tagline itself should describe the everyday moment, not the news headline.
+casual people have an opinion on, a movie/show everyone's talking about, a celebrity moment, etc.
+Then translate each into a small, funny, relatable situation tied to that real event. If the event has
+a recognizable name attached (a team, a movie, a celebrity, a specific storm/place), keep that name in
+the tagline — it's what makes it read as "happening right now" instead of generic. Only strip it out
+to a fully generic situation if the specific reference is too obscure for a broad audience to recognize.
 
-Example chain: real event = "major highway pileup causes 3-hour delays" -> tagline = "stuck in traffic
-for two hours with a dying phone battery"
+Example chain (named): real event = "Spain wins the World Cup final in extra time" -> tagline =
+"Spain fans losing it after the World Cup final winner"
+Example chain (generic, no natural name to anchor to): real event = "major highway pileup causes
+3-hour delays" -> tagline = "stuck in traffic for two hours with a dying phone battery"
 
 Propose 8 concepts, each grounded in something actually happening right now.
 
