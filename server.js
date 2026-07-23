@@ -10,7 +10,7 @@ const { newJob, getJob } = require('./routes/job-store');
 const { runVideoJob } = require('./routes/generate-and-post');
 const { tick } = require('./routes/autopilot');
 const { indexNextBatch } = require('./routes/template-indexer');
-const { getManifest, getCompactList, getRandomVideoTemplate } = require('./routes/template-store');
+const { getManifest, setManifest, getCompactList, getRandomVideoTemplate } = require('./routes/template-store');
 const { FONTS, downloadToTemp, burnTextOverlay, cleanupFile, PROCESSED_DIR } = require('./routes/video-processing');
 const { getDefaults: getTemplateMatchDefaults, setDefaults: setTemplateMatchDefaults } = require('./routes/template-match-settings');
 const { getState: getAutopilotState, getEnabled: getAutopilotEnabled, setEnabled: setAutopilotEnabled, getLearnings: getAutopilotLearnings } = require('./routes/autopilot-store');
@@ -272,12 +272,28 @@ app.get('/admin/template-index-status', async (req, res) => {
   if (!requireSecret(req, res)) return;
   try {
     const [manifest, compactList] = await Promise.all([getManifest(), getCompactList()]);
+    const withScores = compactList.filter((t) => t.attentionScore !== undefined).length;
     res.json({
       indexedCount: manifest.indexedCount,
       discoveryDone: manifest.done,
       withDescriptions: compactList.length,
+      withRichMetadata: withScores, // has emotion/sourceType/attentionScore — post-upgrade schema
       lastRunAt: manifest.lastRunAt,
     });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Restarts indexing from the beginning — existing entries get upgraded in
+// place (appendToCompactList upserts by id), not duplicated. Needed once
+// after a schema change like adding attentionScore/emotion/sourceType, so
+// templates indexed before that change get the new fields too.
+app.post('/admin/template-index-reindex', async (req, res) => {
+  if (!requireSecret(req, res)) return;
+  try {
+    await setManifest({ cursor: null, indexedCount: 0, total: null, done: false, lastRunAt: null });
+    res.json({ ok: true, note: 'Re-indexing will resume on the next /cron/tick, upgrading existing entries in place.' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

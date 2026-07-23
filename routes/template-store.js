@@ -18,9 +18,11 @@ async function getCompactList() {
 
 async function appendToCompactList(records) {
   const list = await getCompactList();
-  list.push(...records);
-  await setJSON(LIST_KEY, list);
-  return list;
+  const byId = new Map(list.map((r) => [r.id, r]));
+  for (const record of records) byId.set(record.id, record); // upsert — re-indexing an id replaces it cleanly
+  const updated = Array.from(byId.values());
+  await setJSON(LIST_KEY, updated);
+  return updated;
 }
 
 async function getTemplateDetail(id) {

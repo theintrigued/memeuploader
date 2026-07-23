@@ -181,4 +181,4 @@ function cleanupFile(localPath) {
   });
 }
 
-module.exports = { burnTextOverlay, extractFrame, downloadToTemp, cleanupFile, PROCESSED_DIR, FONTS };
+module.exports = { burnTextOverlay, extractFrame, downloadToTemp, cleanupFile, getDurationSeconds, PROCESSED_DIR, FONTS };
