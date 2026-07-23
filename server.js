@@ -272,13 +272,34 @@ app.get('/admin/template-index-status', async (req, res) => {
   if (!requireSecret(req, res)) return;
   try {
     const [manifest, compactList] = await Promise.all([getManifest(), getCompactList()]);
-    const withScores = compactList.filter((t) => t.attentionScore !== undefined).length;
+    const withScores = compactList.filter((t) => t.attentionScore !== undefined);
+
+    const trim = (t) => ({
+      id: t.id,
+      description: t.description,
+      emotion: t.emotion ?? null,
+      sourceType: t.sourceType ?? null,
+      durationSeconds: t.durationSeconds ?? null,
+      attentionScore: t.attentionScore ?? null,
+    });
+
+    const byScoreDesc = [...withScores].sort((a, b) => (b.attentionScore ?? 0) - (a.attentionScore ?? 0));
+    const topScored = byScoreDesc.slice(0, 5).map(trim);
+    const bottomScored = byScoreDesc.slice(-5).reverse().map(trim);
+    const mostRecent = compactList.slice(-5).reverse().map(trim); // last appended = most recently indexed
+
+    const avgScore = withScores.length > 0
+      ? Math.round(withScores.reduce((sum, t) => sum + (t.attentionScore || 0), 0) / withScores.length)
+      : null;
+
     res.json({
       indexedCount: manifest.indexedCount,
       discoveryDone: manifest.done,
       withDescriptions: compactList.length,
-      withRichMetadata: withScores, // has emotion/sourceType/attentionScore — post-upgrade schema
+      withRichMetadata: withScores.length, // has emotion/sourceType/attentionScore — post-upgrade schema
+      averageAttentionScore: avgScore,
       lastRunAt: manifest.lastRunAt,
+      sample: { topScored, bottomScored, mostRecent },
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
