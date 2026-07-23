@@ -163,7 +163,14 @@ async function burnTextOverlay(inputPath, {
     '-y', '-i', inputPath,
     '-vf', vf,
     '-threads', '1',
-    '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-pix_fmt', 'yuv420p',
+    // Plain -b:v/-minrate/-maxrate still lets libx264 adapt bitrate down for
+    // low-complexity content (verified: measured output came in at ~2200kbps
+    // despite a 3800k minrate). Forcing real CBR via nal-hrd is what actually
+    // holds the floor regardless of content.
+    '-c:v', 'libx264', '-preset', 'veryfast',
+    '-b:v', '4500k', '-minrate', '4500k', '-maxrate', '4500k', '-bufsize', '4500k',
+    '-x264-params', 'nal-hrd=cbr:force-cfr=1',
+    '-pix_fmt', 'yuv420p',
     '-c:a', 'aac', '-b:a', '128k',
     '-movflags', '+faststart',
     outputPath,
