@@ -401,9 +401,42 @@ app.get('/fonts', (req, res) => {
 });
 
 // Diagnostic endpoint — shows which env vars are present WITHOUT leaking values.
-app.get('/health', (req, res) => {
+app.get('/health', async (req, res) => {
   const { platforms, missing } = checkEnv();
-  res.json({ ok: missing.length === 0, postTo: platforms, missingEnvVars: missing, uptimeSeconds: Math.round(process.uptime()) });
+
+  const upstashConfigured = !!(process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN);
+  const anthropicConfigured = !!process.env.ANTHROPIC_API_KEY;
+
+  const subsystems = {
+    posting: { ok: missing.length === 0, postTo: platforms, missingEnvVars: missing },
+    persistence: {
+      ok: upstashConfigured,
+      note: upstashConfigured ? 'Upstash configured' : 'UPSTASH_REDIS_REST_URL/TOKEN missing — saved prompts, autopilot state, and template index will not persist across restarts',
+    },
+    aiFeatures: {
+      ok: anthropicConfigured,
+      note: anthropicConfigured ? 'Anthropic configured' : 'ANTHROPIC_API_KEY missing — trending suggestions, template matching, and meme caption writing are unavailable',
+    },
+  };
+
+  if (upstashConfigured) {
+    try {
+      const [autopilotEnabled, templateStatus, unusedPrompts] = await Promise.all([
+        getAutopilotEnabled(),
+        getManifest(),
+        countUnused(),
+      ]);
+      subsystems.autopilot = { enabled: autopilotEnabled };
+      subsystems.templateIndex = { indexedCount: templateStatus.indexedCount, discoveryDone: templateStatus.done };
+      subsystems.savedPrompts = { unused: unusedPrompts };
+    } catch (err) {
+      subsystems.persistence.ok = false;
+      subsystems.persistence.note = `Upstash configured but unreachable: ${err.message}`;
+    }
+  }
+
+  const overallOk = Object.values(subsystems).every((s) => s.ok !== false);
+  res.json({ ok: overallOk, uptimeSeconds: Math.round(process.uptime()), ...subsystems });
 });
 
 const port = process.env.PORT || 3000;

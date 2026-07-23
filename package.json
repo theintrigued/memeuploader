@@ -1,7 +1,7 @@
 {
   "name": "clipvault-poster",
-  "version": "1.0.0",
-  "description": "Single-prompt meme video generator + auto-poster to YouTube Shorts, Instagram Reels, TikTok",
+  "version": "2.0.0",
+  "description": "Meme video pipeline: trending/relatable prompt research, Insider Memes generation or own-template matching with custom text overlay, autonomous scheduled posting, and multi-platform publishing (YouTube/Instagram via ShortSync, TikTok direct)",
   "main": "server.js",
   "type": "commonjs",
   "scripts": {
@@ -11,7 +11,6 @@
     "axios": "^1.7.2",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
-    "ffmpeg-static": "^5.3.0",
-    "form-data": "^4.0.0"
+    "ffmpeg-static": "^5.3.0"
   }
 }

@@ -1,6 +1,6 @@
 const axios = require('axios');
 const { extractFrame, downloadToTemp, cleanupFile } = require('./video-processing');
-const { getManifest, setManifest, appendToCompactList, setTemplateDetail } = require('./template-store');
+const { getManifest, setManifest, appendToCompactList } = require('./template-store');
 const log = require('./logger');
 
 const BASE = 'https://backend.insidermemes.com/v1';
@@ -93,7 +93,6 @@ async function indexNextBatch() {
         description,
         indexedAt: Date.now(),
       };
-      await setTemplateDetail(t.id, record);
       compactRecords.push({ id: t.id, type: t.type, categories: t.categories || [], description, mediaUrl: record.mediaUrl });
       indexed++;
     } catch (err) {

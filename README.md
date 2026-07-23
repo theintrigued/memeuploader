@@ -1,83 +1,124 @@
-# ClipVault Poster — full setup guide (phone-friendly)
+# ClipVault Poster
 
-## Part 1 — Get the code onto GitHub
-1. On your phone, go to github.com and create a free account if you don't have one.
-2. Install the **GitHub** mobile app (optional but easier for uploading files) or just use Safari/Chrome.
-3. Create a new repository, e.g. `clipvault-poster`. Keep it **Private**.
-4. Upload every file from this project into the repo root (use "Add file → Upload files" in the GitHub web UI — you can multi-select from your phone's downloads).
+A meme-video pipeline that researches trending/relatable topics, generates or assembles
+short vertical videos, and posts them across YouTube Shorts, Instagram Reels, and TikTok —
+manually or fully autonomously. Runs on Render's free tier, controlled from a phone browser.
 
-## Part 2 — Deploy to Render
-1. Go to render.com, sign up free with your GitHub account (no card needed).
-2. Dashboard → **New → Web Service**.
-3. Connect your `clipvault-poster` repo.
-4. Settings:
-   - Build command: `npm install`
-   - Start command: `npm start`
-   - Instance type: Free
-5. Under **Environment**, add every variable from `.env.example` (you'll fill in real values as you complete Parts 3-5 below). Set `APP_SECRET` to any long random string now — you'll type this into the phone form later.
-6. Click **Create Web Service**. Render gives you a live URL like `https://clipvault-poster.onrender.com`.
-7. Visit that URL — you should see the ClipVault input form.
+This README reflects the system as of the v2.0.0 baseline — everything here is working and
+tested. Treat this as the reference point for future development.
 
-## Part 3 — Insider Memes credentials
-1. Log in at insidermemes.com on a paid plan with video access.
-2. Go to `dashboard/profile?tab=api` → Reveal API Key.
-3. Paste it into Render's `INSIDERMEMES_API_TOKEN` env var.
-4. **Known gap**: the public API docs don't list a job-status endpoint for polling async video jobs. Email chief@insidermemes.com and ask for the correct polling endpoint (or a webhook option), then update the `POLL_PATH` in `routes/memes.js` to match. Until this is confirmed, video generation may fail after the initial request.
+## Two ways a video gets made
 
-## Part 4 — YouTube Shorts
-1. Go to console.cloud.google.com → create a new project.
-2. Enable the **YouTube Data API v3** (APIs & Services → Library).
-3. APIs & Services → OAuth consent screen → set up as "External," add your own Google account as a test user.
-4. Credentials → Create Credentials → OAuth client ID → type "Web application" → add `https://developers.google.com/oauthplayground` as an authorized redirect URI.
-5. Go to developers.google.com/oauthplayground → gear icon (top right) → check "Use your own OAuth credentials" → paste your client ID/secret.
-6. In the left panel, find **YouTube Data API v3**, select the `youtube.upload` scope → Authorize → sign in with the YouTube channel's Google account.
-7. Click "Exchange authorization code for tokens" → copy the **refresh token**.
-8. Put client ID, client secret, and refresh token into Render's env vars.
+**1. Insider Memes mode** — you type a prompt, Insider Memes' own AI picks a template from
+their library and writes the on-screen caption. Costs one Insider Memes credit per video.
 
-## Part 5 — Instagram Reels
-1. You need an Instagram **Business or Creator** account linked to a Facebook Page.
-2. Go to developers.facebook.com → create an App (type: Business).
-3. Add the **Instagram Graph API** product.
-4. Under App Roles, add yourself as Admin (this lets you use the API on your own account without full App Review).
-5. Use Graph API Explorer (developers.facebook.com/tools/explorer) to generate a User Access Token with `instagram_basic`, `instagram_content_publish`, and `pages_show_list` permissions, selecting your app.
-6. Exchange it for a long-lived token (Graph API Explorer has a button for this, or call `/oauth/access_token?grant_type=fb_exchange_token`).
-7. Find your Instagram Business Account ID: call `GET /me/accounts` then `GET /{page-id}?fields=instagram_business_account`.
-8. Put the long-lived token and IG business account ID into Render's env vars.
+**2. Template match mode** — no free-text prompt. Consumes N saved prompts (oldest-unused
+first), and for each one: our own indexed template library gets searched (free local
+keyword narrowing, then one cheap Claude call to pick the best match), Claude writes a real
+meme-format caption (POV:, "me when...", etc.), and our own ffmpeg pipeline burns that text
+onto the raw template video. **Zero Insider Memes credits.** Falls back to Insider Memes
+generation automatically if no good template match is found.
 
-## Part 6 — TikTok
-1. Go to developers.tiktok.com → register a developer account and create an app.
-2. Add the **Content Posting API** product.
-3. Complete the login flow (TikTok's OAuth) to get an access token for your own account — TikTok's docs walk through this with your app's client key/secret.
-4. Put the access token into Render's env var.
-5. Note: until TikTok audits your app, uploads land in your TikTok inbox as a draft, not a live public post — you'll tap "Post" manually in the TikTok app. Apply for audit from your TikTok developer dashboard once you're ready for full automation.
+Both modes post through the same pipeline afterward: YouTube + Instagram via ShortSync
+(one API, one upload, both platforms), TikTok via its own direct Content Posting API
+(lands as an inbox draft until your TikTok app passes audit for direct publish).
 
-## Part 7 — Test it
-1. Open your Render URL on your phone.
-2. Type your `APP_SECRET` and a prompt like "streamer rage quits after losing to a bot."
-3. Tap **Generate & Post**. Watch the response — it'll show the video URL and the result (success or error) for each platform.
-4. Add the Render URL to your phone's home screen (Share → Add to Home Screen) so it feels like a native app.
+## Autopilot
 
-## Costs to expect once this is real
-- Render: free tier works, ~$7/mo removes the cold-start delay
-- Insider Memes: needs a paid plan for video generation (Basic $/mo+)
-- YouTube/Instagram/TikTok APIs: free, but TikTok direct-publish requires audit approval
+A fully autonomous mode, toggled live from the frontend (stored in Upstash, not an env
+var — flips instantly, no redeploy). When on:
+- Posts a configurable number/day (default 20), spread randomly across 2-hour windows
+- Draws from the same unused-saved-prompts pool the manual buttons use — **only runs a
+  real web search when that pool is completely empty**, to minimize search/token spend
+- Defaults to template-match mode using your saved font/size/position settings
+- Reviews each day's performance (via ShortSync analytics) and writes itself a short note
+  that biases tomorrow's research and topic choices
 
-## Autopilot (fully autonomous posting)
-1. Create a free database at upstash.com → copy `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` into Render (required — this is where the daily schedule and learnings live).
-2. Set `AUTOPILOT_TZ_OFFSET_HOURS` to your timezone's UTC offset (e.g. `4` for Gulf Standard Time) so the daily schedule lines up with your actual day.
-3. `AUTOPILOT_POSTS_PER_DAY` (default 20) and `AUTOPILOT_WINDOW_HOURS` (default 2) control the schedule shape — posts are split as evenly as possible across the day's windows, randomly timed within each.
-4. **Set up an external pinger** — Render's free tier has no cron and sleeps when idle, so something needs to hit the server periodically. Go to cron-job.org (free) → create a job hitting `https://your-render-url.onrender.com/cron/tick?secret=YOUR_APP_SECRET` every 5 minutes.
-5. Open the app → flip the **🤖 Autopilot** switch on. That's the only place enable/disable actually lives — it's stored, not an env var, so it takes effect instantly with no redeploy.
+Needs an external pinger hitting `/cron/tick` every ~5 minutes (Render's free tier has no
+cron and sleeps when idle) — see Setup below.
 
-What it does each day: runs one web search per mode (viral + relatable) the first time it wakes up that day, generates a day's worth of distinct taglines "branching" from that single search (no repeated searching = fewer tokens), spreads them randomly across the day per the schedule, and posts each one when its time arrives. At the end of each day it reviews what performed well (via ShortSync analytics) and writes itself a short note that biases tomorrow's search and topic choices.
+## Setup
 
-The switch never removes the manual flow above — Trending topics / Relatable moments / Saved prompts / Generate & Post all keep working exactly as before regardless of whether autopilot is on, so you can always fall back to doing it by hand.
+### Required for any posting at all
+| Env var | What it's for |
+|---|---|
+| `APP_SECRET` | Protects every endpoint — pick a long random string |
+| `INSIDERMEMES_API_TOKEN` | Insider Memes API — needed even in template-match mode, since it still browses `/v1/templates/` (free) |
+| `POST_TO` | Comma-separated: `youtube,instagram,tiktok` |
+
+### Posting platforms
+| Env var | What it's for |
+|---|---|
+| `SHORTSYNC_API_KEY` | Powers YouTube + Instagram — connect both at shortsync.app/settings?section=connections first |
+| `TIKTOK_CLIENT_KEY` / `TIKTOK_CLIENT_SECRET` / `TIKTOK_REFRESH_TOKEN` | Direct TikTok posting — get the refresh token via `/tiktok/login?secret=YOUR_APP_SECRET` |
+
+### Powers search, template matching, captions, autopilot
+| Env var | What it's for |
+|---|---|
+| `ANTHROPIC_API_KEY` | Trending/relatable research, template picking, meme caption writing, end-of-day analysis |
+| `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` | Free Upstash Redis — saved prompts, autopilot state, template index. **Nothing persists across a restart without this.** |
+
+### Autopilot tuning (all optional, sane defaults)
+`AUTOPILOT_POSTS_PER_DAY` (20), `AUTOPILOT_WINDOW_HOURS` (2), `AUTOPILOT_TZ_OFFSET_HOURS` (0 — set to your UTC offset), `AUTOPILOT_PLATFORMS` (defaults to `POST_TO`)
+
+Full template with comments: see `.env.example`.
+
+### One-time setup steps
+1. Deploy to Render (free tier), set the env vars above
+2. Set up a free cron-job.org job hitting `https://your-app.onrender.com/cron/tick?secret=YOUR_APP_SECRET` every 5 minutes — this also keeps the free instance awake
+3. Open the app, check `/health` to confirm every subsystem is green
+4. Template indexing runs automatically in the background on every tick (regardless of autopilot on/off) — check progress at `/admin/template-index-status`. ~2,000 templates takes roughly a day of ticks to fully index.
+5. In the 🎯 Our templates tab, dial in font/size/position/video-crop with the **real preview**
+   button (actually renders on a real template via ffmpeg — not a CSS approximation), then
+   save. Autopilot uses these same saved settings.
+
+## Endpoint reference
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /create` | Insider Memes mode — single prompt |
+| `POST /create-from-saved` | Template match mode — batch of N saved prompts |
+| `POST /auto-pick` | Grabs the single oldest unused prompt, posts via Insider Memes mode |
+| `GET /status/:jobId` | Poll job progress |
+| `GET /trending?mode=viral\|relatable` | Runs research, saves results to the prompt pool |
+| `GET /prompts`, `GET /prompts/unused-count` | Browse/count the saved prompt pool |
+| `GET/POST /autopilot/status`, `/autopilot/toggle` | Autopilot control |
+| `GET/POST /settings/template-match` | Font/size/position/video-crop defaults |
+| `POST /preview-render` | Real ffmpeg render on a random real template — accurate preview |
+| `GET /admin/template-index-status` | Indexing progress |
+| `GET /fonts` | Available bundled fonts |
+| `GET /health` | Full subsystem status — check this first when debugging |
+
+## Architecture
+
+- `server.js` — routes only; business logic lives in `routes/`
+- `routes/generate-and-post.js` — the shared job runner both `/create` variants and autopilot use
+- `routes/memes.js` — Insider Memes API client (retries, polling)
+- `routes/template-store.js` / `template-indexer.js` / `template-picker.js` — our own template
+  library: discovery, per-template Claude vision description, keyword-narrowed matching
+- `routes/video-processing.js` — ffmpeg: crop-to-cover video sizing, libass text burn-in
+  (real font metrics for wrapping, not a guessed heuristic)
+- `routes/trending.js` / `caption-writer.js` — Claude-powered research and meme captioning
+- `routes/autopilot.js` / `autopilot-store.js` — the scheduler and its persisted state
+- `routes/prompt-store.js` — the shared unused/used prompt pool (FIFO)
+- `routes/platforms/shortsync.js` / `tiktok.js` — the two posting integrations
+- `routes/upstash-client.js` — tiny shared Redis REST helper, everything else builds on it
+- `routes/job-store.js` — in-memory job tracking (2hr TTL, swept automatically)
+- `routes/logger.js` — structured, leveled logging used everywhere (no stray `console.log`)
+
+## Known things to keep in mind
+
+- **TikTok won't auto-publish** until the app passes TikTok's audit — posts land as inbox
+  drafts, one tap to finish. This isn't fixable from our side.
+- **Job state is in-memory** — a Render restart mid-job loses progress tracking (the job
+  itself may have completed server-side, just not visible in `/status` anymore).
+- **Template indexing takes real wall-clock time** (~a day) since it's deliberately spread
+  across ticks rather than done in one blocking burst, to keep each tick fast and cheap.
+- **`generateBranchedTaglines`** in `trending.js` is a working, tested, currently-unused
+  utility (superseded by drawing from the saved-prompt pool) — kept because it's a
+  legitimate alternative strategy worth having available, not dead weight to be confused by.
 
 ## Diagnosing problems
-- Visit `https://your-render-url.onrender.com/health` any time — it reports which env vars are
-  missing for your configured `POST_TO` platforms, without ever exposing the actual secret values.
-- Render → your service → **Logs** tab shows a timestamped, leveled log line (`INFO`/`WARN`/`ERROR`)
-  for every step: generation start, each platform attempt, and any failure with the real error message.
-- Every job is tracked in memory for 2 hours after creation — `/status/:jobId` returns 404 past that
-  window, or immediately after a server restart (Render redeploys kill in-flight jobs; the frontend
-  will show this as an error rather than hanging silently).
+- `/health` first — reports on posting, persistence, and AI-feature subsystems separately
+- Render → Logs — every line is timestamped and leveled (`INFO`/`WARN`/`ERROR`)
+- `/admin/template-index-status` and `/autopilot/status` for those specific subsystems
