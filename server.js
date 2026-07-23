@@ -14,6 +14,7 @@ const { getManifest, setManifest, getCompactList, getRandomVideoTemplate } = req
 const { FONTS, downloadToTemp, burnTextOverlay, cleanupFile, PROCESSED_DIR } = require('./routes/video-processing');
 const { getDefaults: getTemplateMatchDefaults, setDefaults: setTemplateMatchDefaults } = require('./routes/template-match-settings');
 const { getState: getAutopilotState, getEnabled: getAutopilotEnabled, setEnabled: setAutopilotEnabled, getLearnings: getAutopilotLearnings } = require('./routes/autopilot-store');
+const { computeDashboardStats } = require('./routes/dashboard-data');
 
 // Crash guards: log and keep running instead of the process dying silently
 // mid-job (which is exactly what made a previous TikTok upload look like it
@@ -422,6 +423,20 @@ app.post('/preview-render', async (req, res) => {
     res.json({ previewUrl: `/processed/${filename}`, templateId: template.id });
   } catch (err) {
     log.error('preview-render', 'Failed:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/dashboard', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
+});
+
+app.get('/dashboard/data', async (req, res) => {
+  if (!requireSecret(req, res)) return;
+  try {
+    res.json(await computeDashboardStats());
+  } catch (err) {
+    log.error('dashboard', 'Failed to compute stats:', err.message);
     res.status(500).json({ error: err.message });
   }
 });

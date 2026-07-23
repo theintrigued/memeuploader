@@ -1,0 +1,247 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ClipVault Dashboard</title>
+  <style>
+    :root {
+      --bg: #0b0b0f; --card: #16161d; --border: #26262f; --text: #f2f2f5; --muted: #9a9aa5;
+      --accent: #8b5cf6; --accent2: #22d3ee; --green: #34d399; --red: #f87171; --radius: 14px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: radial-gradient(circle at top, #1a1024 0%, var(--bg) 55%);
+      color: var(--text); max-width: 520px; margin: 0 auto; padding: 24px 16px 60px; min-height: 100vh;
+    }
+    h1 {
+      font-size: 20px; font-weight: 800; margin: 0 0 4px;
+      background: linear-gradient(90deg, var(--accent), var(--accent2));
+      -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+    }
+    .subtitle { color: var(--muted); font-size: 12px; margin-bottom: 18px; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; margin-bottom: 14px; }
+    .section-title { font-size: 14px; font-weight: 700; margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
+    input { width: 100%; font-size: 15px; padding: 12px; background: #0f0f14; border: 1px solid var(--border); border-radius: 10px; color: var(--text); margin-bottom: 10px; }
+    button { width: 100%; padding: 13px; font-size: 14px; font-weight: 700; border: none; border-radius: 10px; cursor: pointer; background: linear-gradient(90deg, var(--accent), var(--accent2)); color: #0b0b0f; }
+    button:disabled { opacity: 0.5; }
+    .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .stat-box { background: #0f0f14; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
+    .stat-num { font-size: 22px; font-weight: 800; }
+    .stat-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
+    .bar-row { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; font-size: 12px; }
+    .bar-label { width: 78px; flex-shrink: 0; color: var(--muted); text-align: right; }
+    .bar-track { flex: 1; background: #0f0f14; border-radius: 6px; height: 16px; overflow: hidden; }
+    .bar-fill { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent2)); border-radius: 6px; }
+    .bar-count { width: 30px; text-align: left; color: var(--text); font-weight: 600; }
+    .tmpl-row { padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 12px; }
+    .tmpl-row:last-child { border-bottom: none; }
+    .tmpl-desc { color: var(--text); margin-bottom: 2px; }
+    .tmpl-meta { color: var(--muted); }
+    .score-pill { display: inline-block; padding: 1px 7px; border-radius: 10px; font-weight: 700; font-size: 11px; }
+    .score-high { background: rgba(52,211,153,0.15); color: var(--green); }
+    .score-mid { background: rgba(251,191,36,0.15); color: #fbbf24; }
+    .score-low { background: rgba(248,113,113,0.15); color: var(--red); }
+    .badge-ok { color: var(--green); } .badge-bad { color: var(--red); }
+    .learnings-box { font-size: 12px; color: var(--muted); line-height: 1.5; margin-top: 6px; padding-top: 8px; border-top: 1px solid var(--border); }
+    .empty { color: var(--muted); font-size: 13px; padding: 6px 0; }
+    #loadingMsg { color: var(--muted); font-size: 13px; }
+  </style>
+</head>
+<body>
+  <h1>ClipVault Dashboard</h1>
+  <div class="subtitle">Template library, prompt pool, autopilot & system health</div>
+
+  <div class="card">
+    <input id="secret" type="password" placeholder="App secret" />
+    <button id="loadBtn" onclick="load()">Load dashboard</button>
+    <div id="loadingMsg" style="margin-top:8px;"></div>
+  </div>
+
+  <div id="content" style="display:none;">
+
+    <div class="card">
+      <div class="section-title">📼 Template library</div>
+      <div class="stat-grid">
+        <div class="stat-box"><div class="stat-num" id="s-total">-</div><div class="stat-label">Total templates</div></div>
+        <div class="stat-box"><div class="stat-num" id="s-avgscore">-</div><div class="stat-label">Avg attention score</div></div>
+        <div class="stat-box"><div class="stat-num" id="s-videos">-</div><div class="stat-label">Videos / Images</div></div>
+        <div class="stat-box"><div class="stat-num" id="s-avgdur">-</div><div class="stat-label">Avg duration</div></div>
+      </div>
+      <div class="empty" id="s-indexstatus" style="margin-top:8px;"></div>
+    </div>
+
+    <div class="card">
+      <div class="section-title">Attention score distribution</div>
+      <div id="score-dist"></div>
+    </div>
+
+    <div class="card">
+      <div class="section-title">Duration distribution</div>
+      <div id="duration-dist"></div>
+    </div>
+
+    <div class="card">
+      <div class="section-title">Emotion breakdown</div>
+      <div id="emotion-dist"></div>
+    </div>
+
+    <div class="card">
+      <div class="section-title">Source type breakdown</div>
+      <div id="source-dist"></div>
+    </div>
+
+    <div class="card">
+      <div class="section-title">🏆 Top 10 scored templates</div>
+      <div id="top-templates"></div>
+    </div>
+
+    <div class="card">
+      <div class="section-title">🪫 Bottom 10 scored templates</div>
+      <div id="bottom-templates"></div>
+    </div>
+
+    <div class="card">
+      <div class="section-title">📋 Prompt pool</div>
+      <div class="stat-grid">
+        <div class="stat-box"><div class="stat-num" id="p-unused">-</div><div class="stat-label">Unused</div></div>
+        <div class="stat-box"><div class="stat-num" id="p-used">-</div><div class="stat-label">Used</div></div>
+      </div>
+      <div id="p-bymode" style="margin-top:10px;"></div>
+      <div class="empty" id="p-oldest"></div>
+    </div>
+
+    <div class="card">
+      <div class="section-title">🤖 Autopilot</div>
+      <div class="stat-grid">
+        <div class="stat-box"><div class="stat-num" id="a-status">-</div><div class="stat-label">Status</div></div>
+        <div class="stat-box"><div class="stat-num" id="a-today">-</div><div class="stat-label">Posted today</div></div>
+      </div>
+      <div class="learnings-box" id="a-learnings"></div>
+    </div>
+
+    <div class="card">
+      <div class="section-title">⚙️ System</div>
+      <div id="sys-status"></div>
+    </div>
+
+  </div>
+
+  <script>
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.textContent = str ?? '';
+      return div.innerHTML;
+    }
+
+    function renderBarChart(containerId, items, countKey, labelKey) {
+      const el = document.getElementById(containerId);
+      const max = Math.max(1, ...items.map((i) => i[countKey]));
+      if (items.length === 0 || items.every((i) => i[countKey] === 0)) {
+        el.innerHTML = '<div class="empty">No data yet.</div>';
+        return;
+      }
+      el.innerHTML = items.map((i) => `
+        <div class="bar-row">
+          <div class="bar-label">${escapeHtml(String(i[labelKey]))}</div>
+          <div class="bar-track"><div class="bar-fill" style="width:${(i[countKey] / max) * 100}%;"></div></div>
+          <div class="bar-count">${i[countKey]}</div>
+        </div>
+      `).join('');
+    }
+
+    function scoreClass(score) {
+      if (score === null || score === undefined) return '';
+      if (score >= 70) return 'score-high';
+      if (score >= 45) return 'score-mid';
+      return 'score-low';
+    }
+
+    function renderTemplateList(containerId, templates) {
+      const el = document.getElementById(containerId);
+      if (templates.length === 0) {
+        el.innerHTML = '<div class="empty">No scored templates yet.</div>';
+        return;
+      }
+      el.innerHTML = templates.map((t) => `
+        <div class="tmpl-row">
+          <div class="tmpl-desc">${escapeHtml(t.description || '(no description)')}</div>
+          <div class="tmpl-meta">
+            <span class="score-pill ${scoreClass(t.attentionScore)}">${t.attentionScore ?? '?'}</span>
+            ${t.emotion ? ' · ' + escapeHtml(t.emotion) : ''}
+            ${t.sourceType ? ' · ' + escapeHtml(t.sourceType) : ''}
+            ${t.durationSeconds ? ' · ' + Math.round(t.durationSeconds) + 's' : ''}
+          </div>
+        </div>
+      `).join('');
+    }
+
+    async function load() {
+      const secret = document.getElementById('secret').value;
+      const btn = document.getElementById('loadBtn');
+      const msg = document.getElementById('loadingMsg');
+      if (!secret) { msg.textContent = 'Enter your app secret.'; return; }
+
+      btn.disabled = true;
+      btn.textContent = 'Loading...';
+      msg.textContent = '';
+
+      try {
+        const res = await fetch('/dashboard/data?secret=' + encodeURIComponent(secret));
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Request failed');
+
+        document.getElementById('content').style.display = 'block';
+
+        // Templates
+        document.getElementById('s-total').textContent = data.templates.total;
+        document.getElementById('s-avgscore').textContent = data.templates.averageAttentionScore ?? '-';
+        document.getElementById('s-videos').textContent = data.templates.videoCount + ' / ' + data.templates.imageCount;
+        document.getElementById('s-avgdur').textContent = data.templates.averageDurationSeconds ? data.templates.averageDurationSeconds + 's' : '-';
+        document.getElementById('s-indexstatus').textContent =
+          (data.templates.discoveryDone ? '✓ Indexing complete' : '⏳ Indexing in progress') +
+          ' — ' + data.templates.indexedCount + ' indexed, ' + data.templates.recentlyUsedCount + ' in recent-use cooldown';
+
+        renderBarChart('score-dist', data.templates.scoreDistribution, 'count', 'label');
+        renderBarChart('duration-dist', data.templates.durationDistribution, 'count', 'label');
+        renderBarChart('emotion-dist', data.templates.emotionBreakdown, 'count', 'value');
+        renderBarChart('source-dist', data.templates.sourceBreakdown, 'count', 'value');
+        renderTemplateList('top-templates', data.templates.topScored);
+        renderTemplateList('bottom-templates', data.templates.bottomScored);
+
+        // Prompts
+        document.getElementById('p-unused').textContent = data.prompts.unused;
+        document.getElementById('p-used').textContent = data.prompts.used;
+        const modeRows = Object.entries(data.prompts.byMode).map(([mode, counts]) =>
+          `<div class="bar-row"><div class="bar-label">${escapeHtml(mode)}</div><div style="flex:1; font-size:12px; color:var(--muted);">${counts.unused} unused, ${counts.used} used</div></div>`
+        ).join('');
+        document.getElementById('p-bymode').innerHTML = modeRows || '<div class="empty">No prompts saved yet.</div>';
+        document.getElementById('p-oldest').textContent = data.prompts.oldestUnusedAgeHours !== null
+          ? `Oldest unused prompt: ${data.prompts.oldestUnusedAgeHours}h old` : '';
+
+        // Autopilot
+        document.getElementById('a-status').innerHTML = data.autopilot.enabled
+          ? '<span class="badge-ok">ON</span>' : '<span class="badge-bad">OFF</span>';
+        document.getElementById('a-today').textContent = data.autopilot.postedToday + ' / ' + data.autopilot.totalScheduledToday;
+        document.getElementById('a-learnings').innerHTML = data.autopilot.learnings
+          ? '🧠 ' + escapeHtml(data.autopilot.learnings) : '<span class="empty">No learnings recorded yet.</span>';
+
+        // System
+        const sysEl = document.getElementById('sys-status');
+        sysEl.innerHTML = `
+          <div class="bar-row"><div style="flex:1;">Posting ready</div><div class="${data.system.postingReady ? 'badge-ok' : 'badge-bad'}">${data.system.postingReady ? '✓' : '✗'}</div></div>
+          <div class="bar-row"><div style="flex:1;">Configured platforms</div><div style="color:var(--muted);">${data.system.configuredPlatforms.join(', ') || 'none'}</div></div>
+          ${data.system.missingEnvVars.length > 0 ? `<div class="empty">Missing: ${data.system.missingEnvVars.join(', ')}</div>` : ''}
+        `;
+
+        msg.textContent = 'Updated ' + new Date(data.generatedAt).toLocaleTimeString();
+      } catch (e) {
+        msg.textContent = 'Failed: ' + e.message;
+      }
+      btn.disabled = false;
+      btn.textContent = 'Refresh';
+    }
+  </script>
+</body>
+</html>
